@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Evergreen — Esquema de entidades núcleo</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --primary: #1B853F;
+    --secondary: #2C643F;
+    --accent: #2E8C8F;
+    --background: #FFFFFF;
+    --foreground: #222222;
+    --muted: #F8F8F8;
+    --muted-foreground: #5C5C5C;
+    --border: #8C8C8C;
+  }
+  body {
+    font-family: 'Open Sans', Arial, sans-serif;
+    background: var(--background);
+    color: var(--foreground);
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 32px 16px 64px;
+    line-height: 1.5;
+  }
+  h1 {
+    font-family: 'Oswald', Arial, sans-serif;
+    color: var(--primary);
+    font-size: 26px;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    color: var(--muted-foreground);
+    margin-bottom: 32px;
+    font-size: 15px;
+  }
+  .diagram-card {
+    background: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    padding: 24px;
+    margin-bottom: 32px;
+    overflow-x: auto;
+  }
+  h2 {
+    font-family: 'Oswald', Arial, sans-serif;
+    color: var(--secondary);
+    font-size: 20px;
+    margin-top: 40px;
+  }
+  .legend {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 32px;
+  }
+  .legend-item {
+    background: var(--muted);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+  .legend-item b { color: var(--primary); }
+  code {
+    background: #eee;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  footer {
+    margin-top: 48px;
+    font-size: 13px;
+    color: var(--muted-foreground);
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Evergreen — Esquema de entidades núcleo</h1>
+<div class="subtitle">Architecture Spine (draft) · architecture-evergreen-2026-07-02</div>
+
+<div class="diagram-card">
+<pre class="mermaid">
+erDiagram
+    HOME {
+        uuid id
+        string name
+        string timezone
+    }
+    USER {
+        uuid id
+        string email
+        string role "family, staff, admin, super_admin"
+        uuid home_id "vacio solo si super_admin"
+    }
+    RESIDENT {
+        uuid id
+        uuid home_id
+        string name
+        string room
+        date dob
+    }
+    FAMILY_LINK {
+        uuid user_id
+        uuid resident_id
+    }
+    CONTENT_ITEM {
+        uuid id
+        uuid home_id
+        string type "news, notice, announcement, static_page, document, schedule"
+        string title
+        string body
+    }
+    PHOTO {
+        uuid id
+        uuid home_id
+        uuid resident_id
+        string cloudinary_public_id
+        string caption
+    }
+    EVENT {
+        uuid id
+        uuid home_id
+        string title
+        datetime date
+        int capacity
+    }
+    EVENT_REGISTRATION {
+        uuid id
+        uuid event_id
+        uuid resident_id
+        uuid requested_by_user_id
+    }
+    MEAL_MENU_ITEM {
+        uuid id
+        uuid home_id
+        date day
+        string meal_name
+    }
+    MEAL_ORDER {
+        uuid id
+        uuid menu_item_id
+        uuid resident_id
+        uuid ordered_by_user_id
+    }
+    DEVICE_TOKEN {
+        uuid id
+        uuid user_id
+        string token
+        string platform
+    }
+
+    HOME ||--o{ USER : "tiene staff/admins"
+    HOME ||--o{ RESIDENT : "tiene residentes"
+    HOME ||--o{ CONTENT_ITEM : "publica contenido"
+    HOME ||--o{ EVENT : "organiza eventos"
+    HOME ||--o{ MEAL_MENU_ITEM : "ofrece menu"
+
+    USER ||--o{ FAMILY_LINK : "una family puede vincularse a varios residentes"
+    RESIDENT ||--o{ FAMILY_LINK : "un residente puede tener varias familias"
+
+    RESIDENT ||--o{ PHOTO : "aparece en"
+    USER ||--o{ DEVICE_TOKEN : "registra su celular"
+
+    EVENT ||--o{ EVENT_REGISTRATION : "recibe inscripciones"
+    RESIDENT ||--o{ EVENT_REGISTRATION : "el residente queda inscrito"
+    USER ||--o{ EVENT_REGISTRATION : "la family la solicita"
+
+    MEAL_MENU_ITEM ||--o{ MEAL_ORDER : "se pide como"
+    RESIDENT ||--o{ MEAL_ORDER : "el pedido es para el residente"
+    USER ||--o{ MEAL_ORDER : "la family hace el pedido"
+</pre>
+</div>
+
+<h2>Cómo leerlo</h2>
+<div class="legend">
+  <div class="legend-item"><b>HOME</b> es el centro de todo — cada <code>home_id</code> es la línea que nunca se cruza (aislamiento multi-tenant). Todo lo demás cuelga de un <code>home_id</code>, directa o indirectamente.</div>
+  <div class="legend-item"><b>USER</b> son las personas que usan el sistema: familiares, staff, admins de un home, o super admin de la plataforma (único sin <code>home_id</code> fijo, ve los 12 homes).</div>
+  <div class="legend-item"><b>RESIDENT</b> es la persona mayor que vive en el home — el centro emocional del producto.</div>
+  <div class="legend-item"><b>FAMILY_LINK</b> conecta a un familiar con "su" residente — puede haber varios familiares por residente, y un familiar vinculado a más de un residente.</div>
+  <div class="legend-item"><b>PHOTO, EVENT, CONTENT_ITEM, MEAL_MENU_ITEM</b> son las cuatro cosas que un home publica y que family consume — cada una lleva su propio <code>home_id</code>.</div>
+  <div class="legend-item"><b>EVENT_REGISTRATION y MEAL_ORDER</b> son las dos acciones que una family hace: se apunta a un evento, o pide una comida — siempre "para" un residente específico, "hecha por" un usuario family específico.</div>
+  <div class="legend-item"><b>DEVICE_TOKEN</b> es solo el celular registrado de un usuario, para saber a dónde mandar la notificación push.</div>
+</div>
+
+<footer>
+  Generado como apoyo visual durante la sesión de coaching de arquitectura con Winston. La espina (<code>ARCHITECTURE-SPINE.md</code>) sigue siendo el entregable de build; este HTML es solo una ayuda de lectura del ERD.
+</footer>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</body>
+</html>

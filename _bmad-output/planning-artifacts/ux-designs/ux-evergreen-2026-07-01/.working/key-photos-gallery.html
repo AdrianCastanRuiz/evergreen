@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Evergreen — Key Screen: Full-Screen Photo Viewer</title>
+<style>
+/*
+  SPINE COVERAGE — this mock illustrates:
+  - DESIGN.md > Components: gallery-tile (full-screen viewer state), typography.caption
+    (now 14px, muted-foreground #5C5C5C)
+  - EXPERIENCE.md > Component Patterns: "Gallery tile / full-screen viewer" row —
+    "Tap a tile -> full-screen viewer with swipe left/right between photos (FR26),
+    AND an equivalent tap-based affordance (tap the leading/trailing edge of the
+    photo, or small visible prev/next chevrons) — swipe is never the only way to
+    navigate... Swipe down or tap close to return to the grid."
+  - EXPERIENCE.md > Interaction Primitives: Swipe (left/right between photos; swipe
+    down dismisses)
+  - EXPERIENCE.md > Key Flows > Flow 1 — Maria, family member, step 2 ("sees a photo
+    from the garden yesterday via a gallery-tile, opens it full-screen, saves it")
+*/
+:root{
+  --primary:#1B853F;
+  --primary-foreground:#FFFFFF;
+  --secondary:#2C643F;
+  --accent:#2E8C8F;
+  --background:#FFFFFF;
+  --foreground:#222222;
+  --muted:#F8F8F8;
+  --muted-foreground:#5C5C5C;
+  --border:#8C8C8C;
+
+  --font-heading: "Arial Narrow", "Segoe UI Condensed", "Segoe UI", sans-serif; /* represents Oswald 700 */
+  --font-body: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;                 /* represents Open Sans 400/500 */
+
+  --r-default:8px; --r-md:11px; --r-full:9999px;
+  --sp-3:12px; --sp-4:16px;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  padding:32px;
+  background:#EDEDED;
+  font-family:var(--font-body);
+  color:var(--foreground);
+}
+h1{
+  font-family:var(--font-heading);
+  font-size:22px;
+  font-weight:700;
+  letter-spacing:0.01em;
+  margin:0 0 8px;
+}
+.meta-note{
+  font-size:14px;
+  color:var(--muted-foreground);
+  margin:0 0 28px;
+  max-width:700px;
+}
+
+.phone-frame{
+  width:390px;
+  height:844px;
+  background:#111;
+  border-radius:48px;
+  padding:14px;
+  box-shadow:0 20px 40px rgba(0,0,0,0.25);
+}
+.phone-screen{
+  position:relative;
+  width:100%;
+  height:100%;
+  background:#0B0B0B;
+  border-radius:34px;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+}
+.notch{
+  position:absolute;
+  top:0; left:50%;
+  transform:translateX(-50%);
+  width:120px; height:26px;
+  background:#111;
+  border-radius:0 0 16px 16px;
+  z-index:10;
+}
+
+/* Full-screen photo viewer — the whole screen becomes the photo surface */
+.viewer{
+  position:relative;
+  flex:1 1 auto;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.photo-placeholder{
+  position:absolute;
+  inset:0;
+  background:repeating-linear-gradient(135deg, #2F9A50, #2F9A50 16px, #21732F 16px, #21732F 32px);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.photo-placeholder span{
+  background:rgba(0,0,0,0.35);
+  color:#fff;
+  font-size:14px;
+  font-weight:600;
+  padding:8px 14px;
+  border-radius:var(--r-default);
+}
+
+/* Close affordance */
+.close-btn{
+  position:absolute;
+  top:52px; right:16px;
+  z-index:6;
+  width:36px; height:36px;
+  border-radius:var(--r-full);
+  background:rgba(0,0,0,0.45);
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:18px;
+  font-weight:700;
+}
+
+/* Non-swipe fallback navigation: visible tap-zones + chevrons on both edges,
+   per EXPERIENCE.md Component Patterns ("swipe is never the only way to navigate") */
+.tap-zone{
+  position:absolute;
+  top:0; bottom:0;
+  width:72px;
+  z-index:5;
+  display:flex;
+  align-items:center;
+  background:linear-gradient(90deg, rgba(0,0,0,0.18), rgba(0,0,0,0));
+}
+.tap-zone.prev{left:0; justify-content:flex-start;}
+.tap-zone.next{right:0; justify-content:flex-end; background:linear-gradient(270deg, rgba(0,0,0,0.18), rgba(0,0,0,0));}
+.chevron{
+  margin:0 10px;
+  width:38px; height:38px;
+  border-radius:var(--r-full);
+  background:rgba(0,0,0,0.45);
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:18px;
+  font-weight:700;
+}
+
+.swipe-hint{
+  position:absolute;
+  top:52px; left:16px;
+  z-index:6;
+  color:#fff;
+  font-size:12px;
+  font-weight:600;
+  background:rgba(0,0,0,0.35);
+  padding:4px 10px;
+  border-radius:var(--r-full);
+}
+
+/* Caption bar — typography.caption, now 14px, on a dark scrim over the photo */
+.caption-bar{
+  position:relative;
+  z-index:6;
+  padding:14px var(--sp-4) 20px;
+  background:linear-gradient(0deg, rgba(0,0,0,0.65), rgba(0,0,0,0));
+}
+.caption-bar .caption{
+  font-family:var(--font-body);
+  font-size:14px;       /* typography.caption — raised from 13px to 14px */
+  font-weight:400;
+  line-height:1.4;
+  color:#FFFFFF;
+  margin:0 0 4px;
+}
+.caption-bar .caption-meta{
+  font-family:var(--font-body);
+  font-size:14px;
+  color:#D8D8D8;
+  margin:0;
+}
+.progress-dots{
+  display:flex;
+  gap:6px;
+  justify-content:center;
+  margin-top:10px;
+}
+.progress-dots span{
+  width:6px; height:6px;
+  border-radius:var(--r-full);
+  background:rgba(255,255,255,0.4);
+}
+.progress-dots span.active{background:#FFFFFF;}
+</style>
+</head>
+<body>
+<h1>Key Screen — Full-Screen Photo Viewer (Mobile)</h1>
+<p class="meta-note">Photo open full-screen from Maria's Photos gallery. Swipe left/right is the primary gesture, but per the accessibility fix in EXPERIENCE.md, visible tap-zones with prev/next chevrons are always rendered as a non-swipe fallback — never a hidden-gesture-only interaction.</p>
+
+<div class="phone-frame">
+  <div class="phone-screen">
+    <div class="notch"></div>
+    <div class="viewer">
+      <div class="photo-placeholder"><span>garden photo (placeholder)</span></div>
+
+      <div class="swipe-hint">swipe ← →</div>
+      <div class="close-btn">✕</div>
+
+      <!-- Visible, tappable prev/next affordances — required fallback alongside swipe -->
+      <div class="tap-zone prev"><div class="chevron">‹</div></div>
+      <div class="tap-zone next"><div class="chevron">›</div></div>
+    </div>
+
+    <div class="caption-bar">
+      <p class="caption">Dad in the garden — yesterday afternoon</p>
+      <p class="caption-meta">Uploaded by Sarah &nbsp;·&nbsp; Tue, 30 Jun</p>
+      <div class="progress-dots"><span></span><span class="active"></span><span></span><span></span></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

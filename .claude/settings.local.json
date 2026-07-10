@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash(python _bmad/scripts/memlog.py append --workspace \"_bmad-output/planning-artifacts/ux-designs/ux-evergreen-2026-07-01\" --type decision --text \"Source confirmed: PRD at _bmad-output/planning-artifacts/prd.md is the sole UX source\")",
+      "Bash(python _bmad/scripts/memlog.py append --workspace \"_bmad-output/planning-artifacts/ux-designs/ux-evergreen-2026-07-01\" --type event --text \"PRD extracted: multi-tenant care-home family app \\(React Native mobile + React web admin portal\\), 4 personas \\(Maria/familia, Sarah/staff, James/home admin, Priya/super admin\\), B2B2C non-clinical, no accessibility/i18n/brand signals in PRD\")",
+      "Bash(python _bmad/scripts/memlog.py append --workspace \"_bmad-output/planning-artifacts/ux-designs/ux-evergreen-2026-07-01\" --type decision --text \"Additional sources confirmed: brief docx '_bmad-output/planning-artifacts/Evergreen Lean React Build_Adrian.docx' \\(content source\\), and https://evergreen-homecare.com/ as visual/brand reference for DESIGN.md\")",
+      "Bash(python *)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\UsuariE\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-UsuariE-Desktop-evergreen\\\\9feafd87-3a3c-4ff7-bb4a-cf1ed53e0250\\\\scratchpad\\\\docx_extract\")",
+      "Bash(unzip -o \"C:\\\\Users\\\\UsuariE\\\\Desktop\\\\evergreen\\\\_bmad-output\\\\planning-artifacts\\\\Evergreen Lean React Build_Adrian.docx\" -d extracted)",
+      "Bash(ls extracted/docProps/)",
+      "Bash(cat extracted/docProps/core.xml)",
+      "Bash(cat extracted/docProps/app.xml)",
+      "Bash(curl -s \"https://evergreen-homecare.com/wp-content/plugins/elementor/assets/css/frontend.min.css\")",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}

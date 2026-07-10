@@ -1,0 +1,13 @@
+horas hechas:
+
+yo: 5 y 20m
+adrian: 7 h 20m
+
+
+SÃ­, sin problema. Claude Code guarda toda la conversaciÃ³n localmente (en ~/.claude/projects/), asociada a este directorio del proyecto â cerrar Cursor no borra nada.
+
+MaÃ±ana, para recuperarla:
+- En Cursor: abre el panel de Claude Code y pulsa "Session history" (arriba), busca esta conversaciÃ³n y haz clic para retomarla con todo el contexto intacto.
+- Desde terminal (si usas la CLI): claude --continue (retoma la mÃ¡s reciente) o claude --resume (te da un selector) desde esta misma carpeta del proyecto.
+
+Solo importante: tiene que ser desde el mismo directorio (evergreen) â las sesiones no se sincronizan entre mÃ¡quinas ni carpetas distintas. Todo lo que hicimos hoy (memlog, DESIGN.md, EXPERIENCE.md, mockups) tambiÃ©n queda guardado como archivos normales en el proyecto, asÃ­ que aunque no retomes la conversaciÃ³n, el trabajo en sÃ­ no se pierde.

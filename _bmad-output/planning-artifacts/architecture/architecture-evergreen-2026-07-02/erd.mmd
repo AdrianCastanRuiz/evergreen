@@ -1,0 +1,88 @@
+erDiagram
+    HOME {
+        uuid id
+        string name
+        string timezone
+    }
+    USER {
+        uuid id
+        string email
+        string role "family, staff, admin, super_admin"
+        uuid home_id "vacio solo si super_admin"
+    }
+    RESIDENT {
+        uuid id
+        uuid home_id
+        string name
+        string room
+        date dob
+    }
+    FAMILY_LINK {
+        uuid user_id
+        uuid resident_id
+    }
+    CONTENT_ITEM {
+        uuid id
+        uuid home_id
+        string type "news, notice, announcement, static_page, document, schedule"
+        string title
+        string body
+    }
+    PHOTO {
+        uuid id
+        uuid home_id
+        uuid resident_id
+        string cloudinary_public_id
+        string caption
+    }
+    EVENT {
+        uuid id
+        uuid home_id
+        string title
+        datetime date
+        int capacity
+    }
+    EVENT_REGISTRATION {
+        uuid id
+        uuid event_id
+        uuid resident_id
+        uuid requested_by_user_id
+    }
+    MEAL_MENU_ITEM {
+        uuid id
+        uuid home_id
+        date day
+        string meal_name
+    }
+    MEAL_ORDER {
+        uuid id
+        uuid menu_item_id
+        uuid resident_id
+        uuid ordered_by_user_id
+    }
+    DEVICE_TOKEN {
+        uuid id
+        uuid user_id
+        string token
+        string platform
+    }
+
+    HOME ||--o{ USER : "tiene staff/admins"
+    HOME ||--o{ RESIDENT : "tiene residentes"
+    HOME ||--o{ CONTENT_ITEM : "publica contenido"
+    HOME ||--o{ EVENT : "organiza eventos"
+    HOME ||--o{ MEAL_MENU_ITEM : "ofrece menu"
+
+    USER ||--o{ FAMILY_LINK : "una family puede vincularse a varios residentes"
+    RESIDENT ||--o{ FAMILY_LINK : "un residente puede tener varias familias"
+
+    RESIDENT ||--o{ PHOTO : "aparece en"
+    USER ||--o{ DEVICE_TOKEN : "registra su celular"
+
+    EVENT ||--o{ EVENT_REGISTRATION : "recibe inscripciones"
+    RESIDENT ||--o{ EVENT_REGISTRATION : "el residente queda inscrito"
+    USER ||--o{ EVENT_REGISTRATION : "la family la solicita"
+
+    MEAL_MENU_ITEM ||--o{ MEAL_ORDER : "se pide como"
+    RESIDENT ||--o{ MEAL_ORDER : "el pedido es para el residente"
+    USER ||--o{ MEAL_ORDER : "la family hace el pedido"

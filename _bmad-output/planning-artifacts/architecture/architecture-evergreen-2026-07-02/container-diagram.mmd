@@ -1,0 +1,36 @@
+graph TB
+    subgraph Clientes
+        Mobile["App Movil<br/>(Expo / React Native)<br/>family + staff"]
+        Admin["Portal Admin<br/>(Vite SPA + shadcn/ui)<br/>staff + admin + super_admin"]
+    end
+
+    subgraph SharedTypes["packages/shared-types"]
+        Types["Tipos/DTOs del contrato de API"]
+    end
+
+    subgraph Render["Render"]
+        API["API (NestJS)<br/>Guards RBAC - auto-scoping home_id"]
+        AdminHost["Admin Static Site"]
+    end
+
+    subgraph Neon["Neon"]
+        DB[("PostgreSQL<br/>RLS forzado por home_id")]
+    end
+
+    subgraph Externos["Servicios externos"]
+        Cloudinary["Cloudinary<br/>binarios de fotos + CDN"]
+        Push["FCM / APNs<br/>push notifications"]
+    end
+
+    Mobile -- "REST/JSON (JWT)" --> API
+    Admin -- "REST/JSON (JWT)" --> API
+    AdminHost -.-> Admin
+
+    API -- "Prisma + RLS" --> DB
+    API -- "firma de subida / lectura" --> Cloudinary
+    Mobile -- "subida directa del binario" --> Cloudinary
+    API -- "envia notificacion" --> Push
+
+    Types -.-> Mobile
+    Types -.-> Admin
+    Types -.-> API

@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Evergreen — Key Screen: Events List</title>
+<style>
+/*
+  SPINE COVERAGE — this mock illustrates:
+  - DESIGN.md > Components: event-list-item (card row, secondary-filled date badge,
+    heading-sm title, caption meta), button-primary, button-secondary, button-outline
+  - EXPERIENCE.md > Information Architecture: "Events (list — default view; calendar
+    as a secondary toggle...)"
+  - EXPERIENCE.md > Component Patterns: "Event list item / RSVP" row — states
+    not-registered (primary Sign up) -> registered (badge "You're going" + secondary
+    Cancel); "List view is the default for family Events; calendar is an optional
+    secondary toggle."
+  - EXPERIENCE.md > State Patterns: "Event at capacity" — "Sign up button replaced
+    with a disabled state reading 'Fully booked' rather than hidden."
+  - EXPERIENCE.md > Key Flows > Flow 1 — Maria, step 3 ("sees the coffee morning on
+    Thursday as an event-list-item, taps Sign up — one tap, no confirmation dialog,
+    success toast confirms") and Flow 2 — Sarah, step 3 ("Summer BBQ" event).
+*/
+:root{
+  --primary:#1B853F;
+  --primary-foreground:#FFFFFF;
+  --secondary:#2C643F;
+  --secondary-foreground:#FFFFFF;
+  --accent:#2E8C8F;
+  --background:#FFFFFF;
+  --foreground:#222222;
+  --card:#FFFFFF;
+  --muted:#F8F8F8;
+  --muted-foreground:#5C5C5C;
+  --border:#8C8C8C;
+  --destructive:#C23934;
+
+  --font-heading: "Arial Narrow", "Segoe UI Condensed", "Segoe UI", sans-serif; /* represents Oswald 700 */
+  --font-body: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;                 /* represents Open Sans 400/500 */
+
+  --r-sm:3px; --r-default:8px; --r-md:11px; --r-full:9999px;
+  --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-6:24px;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  padding:32px;
+  background:#EDEDED;
+  font-family:var(--font-body);
+  color:var(--foreground);
+}
+h1{
+  font-family:var(--font-heading);
+  font-size:22px;
+  font-weight:700;
+  letter-spacing:0.01em;
+  margin:0 0 8px;
+}
+.meta-note{
+  font-size:14px;
+  color:var(--muted-foreground);
+  margin:0 0 28px;
+  max-width:700px;
+}
+
+.phone-frame{
+  width:390px;
+  height:844px;
+  background:#111;
+  border-radius:48px;
+  padding:14px;
+  box-shadow:0 20px 40px rgba(0,0,0,0.25);
+}
+.phone-screen{
+  position:relative;
+  width:100%;
+  height:100%;
+  background:var(--background);
+  border-radius:34px;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+}
+.notch{
+  position:absolute;
+  top:0; left:50%;
+  transform:translateX(-50%);
+  width:120px; height:26px;
+  background:#111;
+  border-radius:0 0 16px 16px;
+  z-index:5;
+}
+.status-bar{
+  height:44px;
+  flex:0 0 auto;
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  padding:0 22px 6px;
+  font-size:13px;
+  font-weight:600;
+}
+.top-nav{
+  flex:0 0 auto;
+  background:var(--background);
+  border-bottom:1px solid var(--border);
+  padding:10px var(--sp-4) 12px;
+}
+.top-nav .title{
+  font-family:var(--font-heading);
+  font-size:22px;
+  font-weight:700;
+  letter-spacing:0.01em;
+}
+
+/* List/Calendar toggle — reuses button-outline / button-secondary tokens only,
+   no new component invented. List is the default per EXPERIENCE.md IA. */
+.view-toggle{
+  display:flex;
+  gap:var(--sp-2);
+  margin-top:10px;
+}
+.view-toggle .opt{
+  font-size:13px;
+  font-weight:500;
+  padding:6px 14px;
+  border-radius:var(--r-sm);
+  border:1px solid var(--primary);
+}
+.view-toggle .opt.selected{
+  background:var(--primary);
+  color:var(--primary-foreground);
+  border-color:var(--primary);
+}
+.view-toggle .opt.unselected{
+  background:transparent;
+  color:var(--primary);
+}
+
+.screen-body{
+  flex:1 1 auto;
+  overflow-y:auto;
+  padding:var(--sp-4);
+  background:var(--background);
+}
+
+/* event-list-item — DESIGN.md components.event-list-item */
+.event-item{
+  display:flex;
+  gap:var(--sp-3);
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--r-default);
+  padding:var(--sp-3);
+  margin-bottom:var(--sp-4);
+}
+.date-badge{
+  flex:0 0 auto;
+  width:52px;
+  height:56px;
+  border-radius:var(--r-default);
+  background:var(--secondary);
+  color:var(--secondary-foreground);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  font-family:var(--font-body);
+}
+.date-badge .day{font-size:19px; font-weight:700; line-height:1;}
+.date-badge .month{font-size:11px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase;}
+
+.event-main{flex:1 1 auto; min-width:0;}
+.event-title{
+  font-family:var(--font-heading);
+  font-size:17px;         /* typography.heading-sm */
+  font-weight:700;
+  letter-spacing:0.01em;
+  margin:0 0 2px;
+}
+.event-meta{
+  font-family:var(--font-body);
+  font-size:14px;          /* typography.caption */
+  color:var(--muted-foreground);
+  margin:0 0 10px;
+}
+
+.badge-going{
+  display:inline-block;
+  font-size:13px;
+  font-weight:600;
+  color:var(--primary);
+  background:var(--muted);
+  border-radius:var(--r-full);
+  padding:3px 12px;
+  margin-bottom:8px;
+}
+
+.btn{
+  display:inline-block;
+  font-family:var(--font-body);
+  font-size:15px;
+  font-weight:500;
+  letter-spacing:0.01em;
+  border-radius:var(--r-sm);
+  padding:8px 18px;
+  border:none;
+}
+.btn-primary{background:var(--primary); color:var(--primary-foreground);}
+.btn-secondary{background:var(--secondary); color:var(--secondary-foreground);}
+.btn-disabled{
+  background:var(--muted);
+  color:var(--muted-foreground);
+  cursor:not-allowed;
+  border:1px solid var(--border);
+}
+
+.bottom-tab-bar{
+  flex:0 0 auto;
+  display:flex;
+  border-top:1px solid var(--border);
+  background:var(--background);
+  box-shadow:0 -2px 6px rgba(0,0,0,0.05);
+}
+.tab{
+  flex:1;
+  text-align:center;
+  padding:10px 0 14px;
+  font-size:12px;
+  font-weight:600;
+  color:var(--muted-foreground);
+}
+.tab.active{color:var(--primary);}
+.tab .dot{
+  width:20px; height:20px;
+  margin:0 auto 4px;
+  border-radius:var(--r-full);
+  background:currentColor;
+  opacity:0.85;
+}
+</style>
+</head>
+<body>
+<h1>Key Screen — Events List (Mobile)</h1>
+<p class="meta-note">Family Events tab, list view (the confirmed default over calendar). Three event-list-item rows show the three documented RSVP/capacity states side by side.</p>
+
+<div class="phone-frame">
+  <div class="phone-screen">
+    <div class="notch"></div>
+    <div class="status-bar"><span>9:41</span><span>●●●● 5G 🔋</span></div>
+    <div class="top-nav">
+      <div class="title">Events</div>
+      <div class="view-toggle">
+        <span class="opt selected">List</span>
+        <span class="opt unselected">Calendar</span>
+      </div>
+    </div>
+    <div class="screen-body">
+
+      <!-- State 1: NOT REGISTERED — primary "Sign up" -->
+      <div class="event-item">
+        <div class="date-badge"><span class="day">12</span><span class="month">Jul</span></div>
+        <div class="event-main">
+          <p class="event-title">Summer BBQ</p>
+          <p class="event-meta">Sat, 1:00pm &nbsp;·&nbsp; Courtyard Garden</p>
+          <span class="btn btn-primary">Sign up</span>
+        </div>
+      </div>
+
+      <!-- State 2: REGISTERED — badge + secondary "Cancel" (Maria's coffee morning, Flow 1) -->
+      <div class="event-item">
+        <div class="date-badge"><span class="day">02</span><span class="month">Jul</span></div>
+        <div class="event-main">
+          <p class="event-title">Coffee Morning</p>
+          <p class="event-meta">Thu, 10:00am &nbsp;·&nbsp; Garden Room</p>
+          <div class="badge-going">You're going</div><br>
+          <span class="btn btn-secondary">Cancel</span>
+        </div>
+      </div>
+
+      <!-- State 3: FULLY BOOKED — disabled button, event still visible per State Patterns -->
+      <div class="event-item">
+        <div class="date-badge"><span class="day">09</span><span class="month">Jul</span></div>
+        <div class="event-main">
+          <p class="event-title">Coffee Morning</p>
+          <p class="event-meta">Thu, 10:00am &nbsp;·&nbsp; Garden Room</p>
+          <span class="btn btn-disabled">Fully booked</span>
+        </div>
+      </div>
+
+    </div>
+    <div class="bottom-tab-bar">
+      <div class="tab"><div class="dot"></div>Home</div>
+      <div class="tab"><div class="dot"></div>Photos</div>
+      <div class="tab active"><div class="dot"></div>Events</div>
+      <div class="tab"><div class="dot"></div>Menu</div>
+      <div class="tab"><div class="dot"></div>News</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

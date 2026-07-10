@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Evergreen — Key Screen: Admin Home Dashboard</title>
+<style>
+/*
+  SPINE COVERAGE — this mock illustrates:
+  - DESIGN.md > Components: sidebar-nav, top-nav, card
+  - DESIGN.md > Layout & Spacing: web portal content margin (margin-desktop 32px),
+    fluid content area at desktop widths
+  - EXPERIENCE.md > Information Architecture: James — home admin, web portal —
+    "Login -> Home dashboard (metrics) -> Residents -> Content -> Events -> Users"
+  - EXPERIENCE.md > Responsive & Platform: "Web portal, desktop (lg, 1024px+) —
+    sidebar-nav visible and expanded; dashboard panels render in a multi-column grid"
+  - EXPERIENCE.md > Key Flows > Flow 3 — James, home admin, step 1 ("lands on his
+    home's dashboard (metrics: active families, recent uploads, upcoming events)")
+*/
+:root{
+  --primary:#1B853F;
+  --primary-foreground:#FFFFFF;
+  --secondary:#2C643F;
+  --accent:#2E8C8F;
+  --background:#FFFFFF;
+  --foreground:#222222;
+  --card:#FFFFFF;
+  --muted:#F8F8F8;
+  --muted-alt:#F6F6F6;
+  --muted-foreground:#5C5C5C;
+  --border:#8C8C8C;
+
+  --font-heading: "Arial Narrow", "Segoe UI Condensed", "Segoe UI", sans-serif; /* represents Oswald 700 */
+  --font-section: "Segoe UI Semibold", "Segoe UI", system-ui, sans-serif;      /* represents Raleway 600 */
+  --font-body: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;                /* represents Open Sans 400/500 */
+
+  --r-default:8px; --r-md:11px; --r-full:9999px;
+  --sp-4:16px; --sp-6:24px; --sp-8:32px;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  padding:32px;
+  background:#EDEDED;
+  font-family:var(--font-body);
+  color:var(--foreground);
+}
+h1{
+  font-family:var(--font-heading);
+  font-size:22px;
+  font-weight:700;
+  letter-spacing:0.01em;
+  margin:0 0 8px;
+}
+.meta-note{
+  font-size:14px;
+  color:var(--muted-foreground);
+  margin:0 0 24px;
+  max-width:900px;
+}
+
+/* Browser-chrome device frame — simple flat address bar, desktop lg breakpoint */
+.browser-frame{
+  width:1180px;
+  max-width:100%;
+  border-radius:12px;
+  overflow:hidden;
+  box-shadow:0 20px 40px rgba(0,0,0,0.2);
+  background:#D9D9D9;
+}
+.browser-chrome{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:10px 14px;
+  background:#D9D9D9;
+}
+.browser-chrome .dot{width:11px; height:11px; border-radius:50%; background:#B7B7B7;}
+.browser-chrome .addr{
+  flex:1;
+  margin-left:10px;
+  background:#FFFFFF;
+  border-radius:var(--r-full);
+  padding:6px 14px;
+  font-size:12px;
+  color:var(--muted-foreground);
+}
+
+.app-window{
+  display:flex;
+  height:720px;
+  background:var(--background);
+}
+
+/* sidebar-nav — DESIGN.md components.sidebar-nav */
+.sidebar-nav{
+  flex:0 0 240px;
+  background:var(--card);
+  border-right:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  padding:var(--sp-4) 0;
+}
+.sidebar-logo{
+  font-family:var(--font-heading);
+  font-size:16px;
+  font-weight:700;
+  letter-spacing:0.06em;
+  text-transform:uppercase;
+  color:var(--foreground);
+  padding:0 var(--sp-4) var(--sp-6);
+  border-bottom:1px solid var(--border);
+  margin-bottom:var(--sp-4);
+}
+.sidebar-logo small{
+  display:block;
+  font-family:var(--font-body);
+  font-size:11px;
+  font-weight:400;
+  letter-spacing:normal;
+  text-transform:none;
+  color:var(--muted-foreground);
+  margin-top:2px;
+}
+.nav-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-size:15px;
+  font-weight:500;
+  color:var(--foreground);
+  padding:11px var(--sp-4);
+  margin:0 8px 2px;
+  border-radius:var(--r-default);
+}
+.nav-item .ic{
+  width:18px; height:18px;
+  border-radius:4px;
+  background:currentColor;
+  opacity:0.55;
+  flex:0 0 auto;
+}
+.nav-item.active{
+  background:var(--muted);
+  color:var(--primary);
+}
+.nav-item.active .ic{opacity:1;}
+
+/* Content area */
+.content-area{
+  flex:1 1 auto;
+  overflow-y:auto;
+  background:var(--background);
+}
+.top-nav{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:16px var(--sp-8);
+  border-bottom:1px solid var(--border);
+}
+.top-nav .title{
+  font-family:var(--font-heading);
+  font-size:22px;
+  font-weight:700;
+  letter-spacing:0.01em;
+}
+.top-nav .who{
+  font-size:14px;
+  color:var(--muted-foreground);
+}
+.panels{
+  padding:var(--sp-8);
+}
+.section-title{
+  font-family:var(--font-section);
+  font-size:20px;
+  font-weight:600;
+  margin:0 0 var(--sp-4);
+}
+.metrics-grid{
+  display:grid;
+  grid-template-columns:repeat(3, 1fr);
+  gap:var(--sp-6);
+  margin-bottom:var(--sp-8);
+}
+
+/* card — DESIGN.md components.card, used for dashboard metric panels */
+.card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+  padding:var(--sp-4);
+}
+.card .label{
+  font-size:14px;
+  color:var(--muted-foreground);
+  margin:0 0 8px;
+}
+.card .value{
+  font-family:var(--font-heading);
+  font-size:34px;
+  font-weight:700;
+  color:var(--foreground);
+  margin:0 0 4px;
+}
+.card .sub{
+  font-size:13px;
+  color:var(--muted-foreground);
+  margin:0;
+}
+.sample-note{
+  font-size:12px;
+  color:var(--muted-foreground);
+  font-style:italic;
+  margin:-8px 0 var(--sp-8);
+}
+
+.recent-list .card{margin-bottom:12px;}
+.recent-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  font-size:15px;
+}
+.recent-row .rt{font-weight:500;}
+.recent-row .rm{color:var(--muted-foreground); font-size:14px;}
+</style>
+</head>
+<body>
+<h1>Key Screen — Admin Home Dashboard (Web Portal, Desktop lg 1024px+)</h1>
+<p class="meta-note">James, home admin, landing screen after login. Sidebar shows his IA row (Home dashboard, Residents, Content, Events, Users); the content area shows the metric cards named directly in Flow 3 ("active families, recent uploads, upcoming events").</p>
+
+<div class="browser-frame">
+  <div class="browser-chrome">
+    <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    <div class="addr">app.evergreen-care.com/admin/home-dashboard</div>
+  </div>
+  <div class="app-window">
+    <div class="sidebar-nav">
+      <div class="sidebar-logo">Evergreen<small>Evergreen Lodge — Admin</small></div>
+      <div class="nav-item active"><span class="ic"></span>Home dashboard</div>
+      <div class="nav-item"><span class="ic"></span>Residents</div>
+      <div class="nav-item"><span class="ic"></span>Content</div>
+      <div class="nav-item"><span class="ic"></span>Events</div>
+      <div class="nav-item"><span class="ic"></span>Users</div>
+    </div>
+    <div class="content-area">
+      <div class="top-nav">
+        <span class="title">Home Dashboard</span>
+        <span class="who">James &nbsp;·&nbsp; Home Admin, Evergreen Lodge</span>
+      </div>
+      <div class="panels">
+        <p class="section-title">This Week</p>
+        <div class="metrics-grid">
+          <div class="card">
+            <p class="label">Active families</p>
+            <p class="value">57</p>
+            <p class="sub">of 64 linked</p>
+          </div>
+          <div class="card">
+            <p class="label">Recent uploads</p>
+            <p class="value">14</p>
+            <p class="sub">photos this week</p>
+          </div>
+          <div class="card">
+            <p class="label">Upcoming events</p>
+            <p class="value">3</p>
+            <p class="sub">next: Coffee Morning, Thu</p>
+          </div>
+        </div>
+        <p class="sample-note">Sample figures for illustration — no specific per-home metrics are given in the PRD/spine.</p>
+
+        <p class="section-title">Recent Activity</p>
+        <div class="recent-list">
+          <div class="card">
+            <div class="recent-row"><span class="rt">Photo uploaded — Mr Chen, garden</span><span class="rm">Today, 9:14am</span></div>
+          </div>
+          <div class="card">
+            <div class="recent-row"><span class="rt">Summer BBQ — 8 families signed up</span><span class="rm">Yesterday</span></div>
+          </div>
+          <div class="card">
+            <div class="recent-row"><span class="rt">News posted — "Visiting hours extended for summer"</span><span class="rm">2 days ago</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>UX Design Validation: Evergreen</title>
+<style>
+  :root {
+    --bg: #fafaf9;
+    --surface: #ffffff;
+    --border: #e7e5e4;
+    --text: #1c1917;
+    --muted: #78716c;
+
+    --verdict-strong: #16a34a;
+    --verdict-adequate: #65a30d;
+    --verdict-thin: #d97706;
+    --verdict-broken: #dc2626;
+
+    --sev-low: #64748b;
+    --sev-medium: #ca8a04;
+    --sev-high: #ea580c;
+    --sev-critical: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .container { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+
+  header.report-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .title h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .title .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  .synthesis {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--muted);
+    border-radius: 8px;
+    padding: 18px 22px;
+    margin-bottom: 24px;
+    font-size: 15.5px;
+  }
+  .synthesis p { margin: 0 0 10px; }
+  .synthesis p:last-child { margin-bottom: 0; }
+
+  .dimension-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .dim-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .dim-card .dim-name { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .dim-card .dim-verdict { font-size: 14px; font-weight: 600; }
+
+  section.dimension, section.reviewer-section { margin-bottom: 14px; }
+  section.dimension details, section.reviewer-section details {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  section summary {
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  section summary::-webkit-details-marker { display: none; }
+  section summary::before {
+    content: "▸";
+    display: inline-block;
+    color: var(--muted);
+    transition: transform 0.15s ease;
+  }
+  section details[open] summary::before { transform: rotate(90deg); }
+  section summary h2 {
+    display: inline;
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    flex: 1;
+  }
+  .verdict-pill {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: white;
+  }
+  .verdict-strong { background: var(--verdict-strong); }
+  .verdict-adequate { background: var(--verdict-adequate); }
+  .verdict-thin { background: var(--verdict-thin); }
+  .verdict-broken { background: var(--verdict-broken); }
+
+  .dim-body { padding: 4px 20px 18px; }
+  .dim-judgment { color: var(--text); font-size: 14.5px; }
+  .dim-judgment p { margin: 0 0 10px; }
+
+  .findings-list { padding: 0 20px 4px; }
+  article.finding {
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+  }
+  article.finding:first-child { border-top: none; }
+  article.finding header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .badge {
+    font-size: 10.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.4;
+  }
+  .badge-sev-low { background: rgba(100, 116, 139, 0.12); color: var(--sev-low); }
+  .badge-sev-medium { background: rgba(202, 138, 4, 0.14); color: var(--sev-medium); }
+  .badge-sev-high { background: rgba(234, 88, 12, 0.14); color: var(--sev-high); }
+  .badge-sev-critical { background: rgba(220, 38, 38, 0.14); color: var(--sev-critical); }
+  .finding-title { margin: 0; font-size: 15px; font-weight: 500; flex: 1; min-width: 200px; }
+  .finding-location { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; color: var(--muted); }
+  .finding-note, .finding-fix { margin-top: 6px; font-size: 14px; }
+  .finding-fix strong { color: var(--muted); font-weight: 500; }
+
+  .reviewer-source {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  .mechanical {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-top: 24px;
+    font-size: 14px;
+  }
+  .mechanical h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .mechanical ul { margin: 0; padding-left: 20px; }
+  .mechanical li { margin-bottom: 4px; color: var(--text); }
+
+  footer.report-footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  footer .meta { display: flex; gap: 24px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+  <div class="container">
+
+    <header class="report-header">
+      <div class="title">
+        <h1>Evergreen — UX Design Validation Report</h1>
+        <div class="subtitle">_bmad-output/planning-artifacts/ux-designs/ux-evergreen-2026-07-01/</div>
+      </div>
+    </header>
+
+    <div class="synthesis">
+      <p>DESIGN.md is strong: canonical section order intact, every color has a hex value, every <code>{path.to.token}</code> reference in both files resolves, and the shadcn-shaped token naming is disciplined. EXPERIENCE.md is adequate but not airtight as a downstream contract: two top-level family-facing IA surfaces (Menu, News &amp; Documents) have no real component definition anywhere, no state is defined for permission-denied/role-gated access despite RBAC/multi-tenancy being the PRD's headline technical requirement, and three of the four Key Flows omit the explicit failure path the fourth flow and both calibration examples provide. None of this is broken — a human downstream consumer can infer sensible defaults — but an AI story-dev consumer would have to invent load-bearing behavior that should have been committed here.</p>
+      <p><strong>Accessibility lens:</strong> the spine mostly honors its stated "basic good practices" bar in the places it explicitly designed for it, but two concrete gaps would quietly undermine that bar for the stated older/less-tech-fluent audience: <code>muted-foreground</code> gray fails AA contrast on exactly the meta text (dates/times) this persona relies on, and the photo gallery — the single most emotionally load-bearing feature in Flow 1 — is swipe-only with no tap fallback, contradicting the team's own stated swipe-gesture caution elsewhere.</p>
+    </div>
+
+    <div class="dimension-summary">
+      <div class="dim-card"><div class="dim-name">Flow coverage</div><div class="dim-verdict" style="color: var(--verdict-adequate)">Adequate</div></div>
+      <div class="dim-card"><div class="dim-name">Token completeness</div><div class="dim-verdict" style="color: var(--verdict-strong)">Strong</div></div>
+      <div class="dim-card"><div class="dim-name">Component coverage</div><div class="dim-verdict" style="color: var(--verdict-thin)">Thin</div></div>
+      <div class="dim-card"><div class="dim-name">State coverage</div><div class="dim-verdict" style="color: var(--verdict-thin)">Thin</div></div>
+      <div class="dim-card"><div class="dim-name">Visual reference coverage</div><div class="dim-verdict" style="color: var(--verdict-strong)">Expected / fine</div></div>
+      <div class="dim-card"><div class="dim-name">Bloat &amp; overspecification</div><div class="dim-verdict" style="color: var(--verdict-strong)">Strong</div></div>
+      <div class="dim-card"><div class="dim-name">Inheritance discipline</div><div class="dim-verdict" style="color: var(--verdict-strong)">Strong</div></div>
+      <div class="dim-card"><div class="dim-name">Shape fit</div><div class="dim-verdict" style="color: var(--verdict-adequate)">Adequate</div></div>
+    </div>
+
+    <section class="dimension">
+      <details open>
+        <summary><h2>1. Flow coverage</h2><span class="verdict-pill verdict-adequate">Adequate</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>Checked all 4 PRD persona journeys (Maria, Sarah, James, Priya) against EXPERIENCE.md Key Flows for named protagonist, numbered steps, climax beat, failure path; cross-checked the IA table for dangling screen references.</p></div></div>
+        <div class="findings-list">
+          <article class="finding"><header><span class="badge badge-sev-high">High</span><h3 class="finding-title">Flows 2–4 (Sarah, James, Priya) have no explicit "Failure path" line</h3><span class="finding-location">EXPERIENCE.md, Key Flows §Flow 2/3/4</span></header><div class="finding-note">Unlike Flow 1 (Maria) and every flow in both calibration examples (Quill, Drift), which give every flow a labeled failure branch.</div><div class="finding-fix"><strong>Fix:</strong> add one Failure: line per flow — Sarah: all 3 upload retries exhausted; James: publish/network failure; Priya: duplicate home name / creation failure.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-medium">Medium</span><h3 class="finding-title">Dangling IA reference "Operational lists"</h3><span class="finding-location">EXPERIENCE.md, Information Architecture table, Sarah/Web portal row</span></header><div class="finding-note">Never appears again anywhere in DESIGN.md or EXPERIENCE.md — no component, state, or flow step references it.</div><div class="finding-fix"><strong>Fix:</strong> name the actual screen(s) this refers to, or remove the term.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-low">Low</span><h3 class="finding-title">Inconsistent failure-path labeling convention</h3><span class="finding-location">EXPERIENCE.md, Key Flows §Flow 2, step 2</span></header><div class="finding-note">Flow 2's mid-flow upload failure (weak WiFi) is narrated inline but not labeled Failure: the way Flow 1 is.</div><div class="finding-fix"><strong>Fix:</strong> normalize with an explicit Failure: line or fold into the labeled convention used in Flow 1.</div></article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>2. Token completeness</h2><span class="verdict-pill verdict-strong">Strong</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>Checked every frontmatter token in DESIGN.md against every <code>{path.to.token}</code> reference in both files. All colors carry hex values; all references resolve.</p></div></div>
+        <div class="findings-list">
+          <article class="finding"><header><span class="badge badge-sev-medium">Medium</span><h3 class="finding-title">Contrast statement doesn't cover every load-bearing pair</h3><span class="finding-location">EXPERIENCE.md, Accessibility Floor; DESIGN.md, Colors</span></header><div class="finding-note">No contrast statement covers secondary-foreground on secondary, accent-blue-foreground on accent-blue, or destructive-foreground on destructive — all actually used by named components.</div><div class="finding-fix"><strong>Fix:</strong> extend the contrast statement to every foreground/background pair a component actually uses, or explicitly scope the floor to "primary pairs only, others assumed safe pending audit."</div></article>
+          <article class="finding"><header><span class="badge badge-sev-low">Low</span><h3 class="finding-title">Orphan token accent-foreground</h3><span class="finding-location">DESIGN.md frontmatter, colors.accent-foreground</span></header><div class="finding-note">Defined but never referenced by any component or prose sentence.</div><div class="finding-fix"><strong>Fix:</strong> wire it into a component (e.g., an accent-filled badge) or drop it.</div></article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details open>
+        <summary><h2>3. Component coverage</h2><span class="verdict-pill verdict-thin">Thin</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>Checked every component name in both files, cross-matched for a visual row (DESIGN.md) and a behavioral row (EXPERIENCE.md) with real rules.</p></div></div>
+        <div class="findings-list">
+          <article class="finding"><header><span class="badge badge-sev-critical">Critical</span><h3 class="finding-title">"Meal selection row" has no DESIGN.md component</h3><span class="finding-location">EXPERIENCE.md Component Patterns; DESIGN.md Components — absent</span></header><div class="finding-note">Menu is a top-level family tab (FR37–40) exercised in Maria's own Key Flow, with zero visual spec (no radius, color, or typography assigned to day tabs or meal-option rows).</div><div class="finding-fix"><strong>Fix:</strong> add a meal-row (or similar) entry to DESIGN.md frontmatter components and the Components section.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-high">High</span><h3 class="finding-title">News &amp; Documents has no component in either file</h3><span class="finding-location">EXPERIENCE.md IA table / Component Patterns — absent; DESIGN.md Components — absent</span></header><div class="finding-note">Only its empty state ("Nothing posted yet.") exists; the populated state has no visual or behavioral spec at all.</div><div class="finding-fix"><strong>Fix:</strong> add a news-post/document list-item component, or explicitly state it reuses event-list-item/card.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-medium">Medium</span><h3 class="finding-title">Several DESIGN.md components have no EXPERIENCE.md behavior row</h3><span class="finding-location">DESIGN.md Components (button-primary, button-secondary, button-outline, card, featured-card, resident-profile-card, top-nav)</span></header><div class="finding-note">No corresponding row in EXPERIENCE.md Component Patterns, and no disclaimer stating these are presentational-only.</div><div class="finding-fix"><strong>Fix:</strong> add minimal behavior rows, or add an explicit "visual-only, no special behavior" note as the Drift calibration example does.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-low">Low</span><h3 class="finding-title">Upload-item component conflated with toast-banner</h3><span class="finding-location">EXPERIENCE.md, Component Patterns, "Photo upload + retry queue" row</span></header><div class="finding-note">Cross-references {components.toast-banner} but actually describes the queued upload list item's own affordance, which is never named or visually specified in DESIGN.md.</div><div class="finding-fix"><strong>Fix:</strong> name and define the upload-item component distinctly from toast-banner, or clarify the reference is intentionally about the escalation toast only.</div></article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details open>
+        <summary><h2>4. State coverage</h2><span class="verdict-pill verdict-thin">Thin</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>Walked every IA surface across both surfaces against the expected state set (empty, cold-load, focus, error, offline, permission-denied).</p></div></div>
+        <div class="findings-list">
+          <article class="finding"><header><span class="badge badge-sev-high">High</span><h3 class="finding-title">No "permission-denied" state anywhere</h3><span class="finding-location">EXPERIENCE.md, State Patterns table — row absent</span></header><div class="finding-note">Despite RBAC + strict home_id multi-tenant isolation being the PRD's #1 Technical Success criterion (NFR7) across four distinct roles. The Drift calibration example includes an equivalent Permission denied row.</div><div class="finding-fix"><strong>Fix:</strong> add a state for role-gated/home-scoped access attempts (e.g., staff hitting an admin-only URL, home admin hitting a super-admin-only route).</div></article>
+          <article class="finding"><header><span class="badge badge-sev-medium">Medium</span><h3 class="finding-title">No state for invalid/expired invite code</h3><span class="finding-location">EXPERIENCE.md State Patterns — absent; IA table "Onboarding (invite code)"</span></header><div class="finding-note">Onboarding is literally the first screen in Flow 1 (Maria), and FR5 covers this case, but no error state is defined for it.</div><div class="finding-fix"><strong>Fix:</strong> add an "Invalid invite code" state row.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-low">Low</span><h3 class="finding-title">Remaining admin surfaces lack explicit empty-state rows</h3><span class="finding-location">EXPERIENCE.md State Patterns table</span></header><div class="finding-note">Content editor (news/documents/menus/schedules/notices), Users, Homes, Home admin assignment, Meal orders view have no explicit empty-state entry beyond the two examples given.</div><div class="finding-fix"><strong>Fix:</strong> add rows for the remaining admin surfaces, or state explicitly they all follow the same empty-state pattern shown for Residents/Events.</div></article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>5. Visual reference coverage</h2><span class="verdict-pill verdict-strong">Expected / fine</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>Checked mockups/, wireframes/, imports/ under the workspace folder.</p></div></div>
+        <div class="findings-list">
+          <article class="finding"><header><span class="badge badge-sev-low">Info</span><h3 class="finding-title">No visual artifacts this run — expected</h3><span class="finding-location">workspace folders</span></header><div class="finding-note">mockups/ and wireframes/ do not exist; imports/ exists and is empty. Matches stated context — evergreen-homecare.com was analyzed live by a subagent rather than saved locally. Not a defect.</div></article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>6. Bloat &amp; overspecification</h2><span class="verdict-pill verdict-strong">Strong</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>Checked pixel specs vs. tokens, source restatement, prose-where-table-works, decorative narrative untied to a decision, editorial-voice discipline.</p></div></div>
+        <div class="findings-list">
+          <article class="finding"><header><span class="badge badge-sev-low">Low</span><h3 class="finding-title">Mild redundancy between frontmatter comments and prose</h3><span class="finding-location">DESIGN.md, frontmatter comments + Colors section</span></header><div class="finding-note">The destructive-color caveat appears near-verbatim in both places — useful for a human tracing an assumption, not true bloat.</div><div class="finding-fix"><strong>Fix:</strong> none required; optionally collapse to one location if trimming is desired.</div></article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>7. Inheritance discipline</h2><span class="verdict-pill verdict-strong">Strong</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>Checked sources frontmatter resolution, UJ names verbatim from PRD, glossary consistency, component-name identity, token reference resolution.</p></div></div>
+        <div class="findings-list">
+          <article class="finding"><header><span class="badge badge-sev-medium">Medium</span><h3 class="finding-title">shadcn primitive inheritance never enumerated</h3><span class="finding-location">DESIGN.md, Brand &amp; Style / Components — disclaimer absent</span></header><div class="finding-note">Unlike the Drift calibration example, DESIGN.md never states which shadcn/ui primitives (Table, Dialog, Sheet, Tabs, Command, etc.) the admin portal inherits as-is, despite clearly using tables and modals/sheets.</div><div class="finding-fix"><strong>Fix:</strong> add a short "inherits shadcn's Table/Dialog/Sheet/Tabs as-is" line as Drift's spine does.</div></article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details open>
+        <summary><h2>8. Shape fit</h2><span class="verdict-pill verdict-adequate">Adequate</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>Checked DESIGN.md canonical section order; EXPERIENCE.md required-default sections; required-when-applicable triggers.</p></div></div>
+        <div class="findings-list">
+          <article class="finding"><header><span class="badge badge-sev-medium">Medium</span><h3 class="finding-title">No "Inspiration &amp; Anti-patterns" section</h3><span class="finding-location">EXPERIENCE.md — section absent</span></header><div class="finding-note">The memlog documents a genuine reference product (evergreen-homecare.com) that directly shaped brand decisions, and EXPERIENCE.md scatters several real anti-pattern statements inline (no badge counts, no swipe-to-delete, no confirmation dialogs on sign-up) that the calibration examples would consolidate into this section.</div><div class="finding-fix"><strong>Fix:</strong> add a short Inspiration &amp; Anti-patterns section citing what was lifted from evergreen-homecare.com and consolidating the scattered "banned" rules.</div></article>
+        </div>
+      </details>
+    </section>
+
+    <section class="reviewer-section">
+      <details open>
+        <summary><h2>Accessibility review</h2><span class="reviewer-source">review-accessibility.md</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>The spine mostly honors its stated "basic good practices" bar in the places it explicitly designed for it: RSVP/upload/validation states are properly text-paired, destructive and secondary color pairs are comfortably AA-compliant, and touch targets are called out for the highest-traffic components. But two concrete gaps would quietly undermine that bar for the stated older/less-tech-fluent audience.</p></div></div>
+        <div class="findings-list">
+          <article class="finding"><header><span class="badge badge-sev-critical">Critical</span><h3 class="finding-title">muted-foreground fails AA contrast on the exact meta text this persona needs</h3><span class="finding-location">DESIGN.md Colors/Typography; EXPERIENCE.md Accessibility Floor</span></header><div class="finding-note">{colors.muted-foreground} (#7A7A7A) fails WCAG AA for normal text against both background (#FFFFFF, ≈4.29:1) and muted (#F8F8F8, ≈4.04:1) — both below the required 4.5:1. This is the exact color used for timestamps, event date/time, photo captions, inactive tab labels, at the smallest type size (13px caption). Directly contradicts EXPERIENCE.md's own Accessibility Floor claim.</div><div class="finding-fix"><strong>Fix:</strong> darken muted-foreground to roughly #5C5C5C/#5E5E5E (≈4.6–4.7:1 on white) or increase caption size, and correct the Accessibility Floor claim to reflect the real ratio.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-high">High</span><h3 class="finding-title">Gallery viewer is swipe-only with no tap fallback</h3><span class="finding-location">EXPERIENCE.md Component Patterns — Gallery tile / full-screen viewer; Interaction Primitives</span></header><div class="finding-note">Elsewhere the team explicitly reasoned that swipe gestures are risky for this audience ("no swipe-to-delete... keeps the surface predictable"), but that caution wasn't applied to the gallery's primary navigation gesture — and photos are the emotional core of Flow 1 (Maria's climax moment). A user who doesn't discover the swipe gesture is stuck on the first photo.</div><div class="finding-fix"><strong>Fix:</strong> add visible tap zones or arrow affordances alongside swipe, matching the same "predictable, non-hidden-gesture" logic already applied to list rows.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-high">High</span><h3 class="finding-title">13px caption floor compounds the contrast failure</h3><span class="finding-location">EXPERIENCE.md Accessibility Floor; DESIGN.md typography.caption</span></header><div class="finding-note">Event times/locations, photo dates, meal-day labels sit at the smallest text size AND a failing contrast ratio — a double penalty on meta information explicitly called out as important for an older audience.</div><div class="finding-fix"><strong>Fix:</strong> fix the contrast first; separately consider a 14–15px caption floor as a more forgiving unscaled default.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-medium">Medium</span><h3 class="finding-title">Primary green on white / white on primary has almost no AA margin</h3><span class="finding-location">DESIGN.md Colors [ASSUMPTION]; EXPERIENCE.md Accessibility Floor</span></header><div class="finding-note">Both pairings compute to ≈4.69:1 — technically passing but with almost no margin, and the hex is flagged [ASSUMPTION] (visual analysis, not confirmed brand guideline).</div><div class="finding-fix"><strong>Fix:</strong> when the real brand hex is confirmed with the client, explicitly re-verify this pairing.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-medium">Medium</span><h3 class="finding-title">Calendar "has event" dot is an uncovered color-only signal</h3><span class="finding-location">EXPERIENCE.md Component Patterns — Event calendar cell; Accessibility Floor</span></header><div class="finding-note">{colors.accent} dot contrast against cell background is ≈2.94:1, under the 3:1 UI-component guidance, with no numeric/text fallback, and not covered by the stated "no color-only signaling" rule.</div><div class="finding-fix"><strong>Fix:</strong> extend the no-color-only rule to the calendar dot (e.g., a small count badge) and/or deepen the teal to clear 3:1.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-medium">Medium</span><h3 class="finding-title">Card/input hairline borders are nearly invisible</h3><span class="finding-location">DESIGN.md Elevation &amp; Depth, Colors</span></header><div class="finding-note">border (#D8D8D8 ≈1.42:1) and border-strong (#D1D1D1 ≈1.53:1) are far below the 3:1 guidance for perceivable UI boundaries, and Elevation & Depth relies on this hairline alone in default state.</div><div class="finding-fix"><strong>Fix:</strong> darken the default border token or add subtle background-fill differentiation so boundaries are legible without focus state.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-medium">Medium</span><h3 class="finding-title">Touch-target minimum not stated for several interactive elements</h3><span class="finding-location">EXPERIENCE.md Accessibility Floor; Component Patterns — Event calendar cell, Meal selection row</span></header><div class="finding-note">form-input, event-calendar-cell day cells, and the meal "Cancel order" text-link aren't in the explicit 44pt/48dp list. Calendar day cells are highest risk (7 columns per week vs. 44pt floor is a real design tension).</div><div class="finding-fix"><strong>Fix:</strong> add these to the explicit touch-target list and flag the calendar-cell/7-column tension for implementation.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-medium">Medium</span><h3 class="finding-title">Resident switcher has no rule for pill-row vs. dropdown, no scroll affordance</h3><span class="finding-location">DESIGN.md components.resident-switcher; EXPERIENCE.md Component Patterns</span></header><div class="finding-note">For a less tech-fluent user with 3+ linked residents, an undiscovered horizontal-scroll interaction risks a resident's content never being found.</div><div class="finding-fix"><strong>Fix:</strong> pick one pattern or a clear threshold (e.g. pill row for 2–3, dropdown for 4+), and specify a visible scroll cue.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-medium">Medium</span><h3 class="finding-title">No default stated between Events list vs. calendar view</h3><span class="finding-location">EXPERIENCE.md Information Architecture; Key Flows — Flow 1</span></header><div class="finding-note">Calendar/grid view is inherently higher cognitive load than a list for a less tech-fluent audience; Flow 1 implicitly uses the list without the spine ever formalizing that as the default.</div><div class="finding-fix"><strong>Fix:</strong> explicitly set list as the default view for family users, with calendar as an optional secondary toggle.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-low">Low</span><h3 class="finding-title">Web portal focus order/Esc behavior only asserted, not specified</h3><span class="finding-location">EXPERIENCE.md Accessibility Floor</span></header><div class="finding-note">"Follows shadcn/ui defaults" isn't checkable against anything concrete — matters most for staff on a mobile-browser portal.</div><div class="finding-fix"><strong>Fix:</strong> at minimum, state that opening/closing a modal or the mobile nav sheet traps and returns focus.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-low">Low</span><h3 class="finding-title">Hover-only accent-blue fill is sub-AA</h3><span class="finding-location">DESIGN.md Colors</span></header><div class="finding-note">accent-blue-hover with white text ≈4.29:1 — low real-world impact since hover doesn't apply on touch and is transient on desktop.</div><div class="finding-fix"><strong>Fix:</strong> low priority; verify only if this fill ever renders static label text.</div></article>
+          <article class="finding"><header><span class="badge badge-sev-low">Low</span><h3 class="finding-title">Teal accent described as "info-toast background" but not used that way</h3><span class="finding-location">DESIGN.md Colors vs. Components — toast-banner</span></header><div class="finding-note">Prose inconsistency risks an implementer wiring in the lower-contrast teal instead of accent-blue for the info toast.</div><div class="finding-fix"><strong>Fix:</strong> remove "info-toast backgrounds" from the teal-accent description to match the component spec.</div></article>
+        </div>
+      </details>
+    </section>
+
+    <div class="mechanical">
+      <h3>Mechanical notes</h3>
+      <ul>
+        <li>No name inconsistencies between DESIGN.md component tokens and EXPERIENCE.md references — all kebab-case names match exactly.</li>
+        <li>No broken {path.to.token} cross-references in either file.</li>
+        <li>Frontmatter complete in both files.</li>
+        <li>No Mermaid diagrams used in either file.</li>
+        <li>Dangling IA reference: "Operational lists" (Sarah/staff web row) never defined again.</li>
+        <li>Component-name mismatch: "Photo upload + retry queue" row points to toast-banner but actually describes an undefined upload-list-item component.</li>
+      </ul>
+    </div>
+
+    <footer class="report-footer">
+      <div class="meta">
+        <span>Rubric: review-rubric.md</span>
+        <span>Accessibility: review-accessibility.md</span>
+        <span>Generated: 2026-07-01</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>
