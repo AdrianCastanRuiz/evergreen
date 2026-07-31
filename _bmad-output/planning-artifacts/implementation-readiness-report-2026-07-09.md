@@ -235,13 +235,13 @@ Found — bmad-ux spine pair (`DESIGN.md` + `EXPERIENCE.md`), status `final`, up
 
 **UX ↔ Architecture:** Strong alignment on tech stack (React Native Reusables/NativeWind ↔ AD's RN/Expo stack; shadcn/ui ↔ Vite+React admin), offline posture (UX's "cached content + retry queue" ↔ AD-16's TanStack Query persisted cache + AD-9's exact 30s/2min/5min backoff), and push payload shape (UX's deep-linking requirement ↔ AD-10's typed `{type, entityId, route}`).
 
-**❗ CRITICAL — Three-way conflict on multi-home family accounts:**
+**~~❗ CRITICAL — Three-way conflict on multi-home family accounts:~~ [RESOLVED 2026-07-25]**
 
 - **UX** (`EXPERIENCE.md`, Information Architecture): "Family accounts can link to **multiple residents** (e.g. two parents in the same **or different homes**)" — explicitly describes a family account spanning two different care homes.
-- **Architecture** (`ARCHITECTURE-SPINE.md`, Core-Entity ERD): `USER { uuid id, string role, uuid home_id }` — a user has exactly **one** `home_id`. AD-1's entire tenant-isolation mechanism (`AsyncLocalStorage`-resolved `home_id`, Prisma Client Extension auto-injection, RLS) resolves a **single** `home_id` per authenticated session. There is no modeled mechanism for a user whose accessible residents span two different `home_id` values.
-- **Epics/Stories** (`epics.md`, Epic 1 Story 1.5): an AC explicitly **rejects** this scenario — "Given the invited email already exists in the system for a different home, When I attempt to invite it, Then I see an inline error rather than a silent cross-home account merge."
+- **Architecture** (`ARCHITECTURE-SPINE.md`, Core-Entity ERD): ~~`USER { uuid id, string role, uuid home_id }` — a user has exactly **one** `home_id`. AD-1's entire tenant-isolation mechanism (`AsyncLocalStorage`-resolved `home_id`, Prisma Client Extension auto-injection, RLS) resolves a **single** `home_id` per authenticated session. There is no modeled mechanism for a user whose accessible residents span two different `home_id` values.~~ **[UPDATED 2026-07-25]** Se eliminó `home_id` de `USER` y se introdujo `HOME_MEMBERSHIP(user_id, home_id, role)`. El `home_id` activo del familiar se resuelve por request vía header `X-Active-Home-Id`, no del JWT. AD-1 (auto-inyección condicional por rol), AD-11 (doble validación FAMILY_LINK + HOME_MEMBERSHIP), y AD-18 (nuevo) formalizan el modelo. Ver `ARCHITECTURE-SPINE.md`.
+- **Epics/Stories** (`epics.md`, Epic 1 Story 1.5): ~~an AC explicitly **rejects** this scenario — "Given the invited email already exists in the system for a different home, When I attempt to invite it, Then I see an inline error rather than a silent cross-home account merge."~~ **[PENDING UPDATE]** La AC de Story 1.5 debe cambiar para reflejar que invitar a un familiar ya existente crea un nuevo `HOME_MEMBERSHIP` en lugar de rechazar la invitación.
 
-These three documents disagree on a real product decision: can a family member with parents in two different care homes use one account, or do they need two separate logins? This was marked `[ASSUMPTION — inherited from memlog IA decision on multi-resident linking]` in `EXPERIENCE.md` and was never reconciled against the tenant-isolation model that came later in Architecture. This needs an explicit product decision, not a default.
+**Resolución:** Decisión arquitectónica aprobada — un familiar puede estar vinculado a múltiples residencias mediante una sola cuenta. Ver AD-18 y cambios en AD-1, AD-8, AD-11 en `ARCHITECTURE-SPINE.md`.
 
 ### Warnings
 

@@ -1,7 +1,7 @@
 horas hechas:
 
 yo: 5 y 20m
-adrian: 7 h 20m
+adrian: 9 h 20m
 
 
 SÃ­, sin problema. Claude Code guarda toda la conversaciÃ³n localmente (en ~/.claude/projects/), asociada a este directorio del proyecto â cerrar Cursor no borra nada.

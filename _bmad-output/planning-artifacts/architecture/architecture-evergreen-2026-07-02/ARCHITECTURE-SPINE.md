@@ -7,7 +7,7 @@ paradigm: 'feature-modular layered (NestJS modules)'
 scope: 'Evergreen multi-tenant platform: React Native (Expo) family/staff app, React admin portal, REST API + PostgreSQL'
 status: final
 created: '2026-07-02'
-updated: '2026-07-02'
+updated: '2026-07-25'
 binds: []
 sources:
   - '_bmad-output/planning-artifacts/prd.md'
@@ -36,6 +36,7 @@ graph LR
 - **Binds:** all API/DB access (`all`)
 - **Prevents:** any single missed `home_id` filter — an app bug, raw SQL, or a new endpoint — from leaking data across care homes.
 - **Rule:** (1) auth middleware resolves the authenticated user's `home_id` into request-scoped context (`AsyncLocalStorage`); (2) a Prisma Client Extension auto-injects `home_id` into every query — a developer never writes the filter by hand; (3) every tenant-scoped table has Postgres Row-Level Security enforced with `FORCE ROW LEVEL SECURITY` (without `FORCE`, the table-owner role bypasses the policy); (4) every tenant-scoped table carries a composite index leading with `home_id`; (5) `super_admin` operations that legitimately span homes (e.g. listing all homes, platform analytics) opt out via a narrow `@BypassTenantScope()` decorator on that specific controller method only — never a global toggle — and every use is audit-logged with the acting user's id. Any cross-home access outside this sanctioned decorator is a bug, not a feature.
+- **Home-id resolution is role-dependent:** (6) `staff`, `admin`, and `super_admin` resolve `home_id` from the JWT token payload (their home is fixed); (7) `family` resolves `home_id` from the `X-Active-Home-Id` request header, validated against the user's `HOME_MEMBERSHIP` rows at the auth middleware layer — the family user never has a `home_id` in their JWT. The Prisma Client Extension and RLS remain unchanged: they read `home_id` from `AsyncLocalStorage` regardless of how it was populated.
 
 ### AD-2 — Monorepo with a single API-contract source of truth
 
@@ -77,7 +78,7 @@ graph LR
 
 - **Binds:** `auth` module, all clients
 - **Prevents:** insecure session handling, silent auth failures, brute-forced login/reset endpoints, and open-ended password-reset links.
-- **Rule:** JWT access + refresh tokens; refresh happens automatically; tokens are stored in the platform keychain on-device, never in plain storage (PRD FR6, NFR8). `@nestjs/throttler` rate-limits the login and password-reset endpoints specifically (NFR10). Password-reset issues a `PasswordResetToken` row with `expires_at` set 1 hour out, checked at consumption time — a used or expired token is always rejected (NFR9).
+- **Rule:** JWT access + refresh tokens; refresh happens automatically; tokens are stored in the platform keychain on-device, never in plain storage (PRD FR6, NFR8). `@nestjs/throttler` rate-limits the login and password-reset endpoints specifically (NFR10). Password-reset issues a `PasswordResetToken` row with `expires_at` set 1 hour out, checked at consumption time — a used or expired token is always rejected (NFR9). The JWT payload carries `home_id` for `staff`, `admin`, and `super_admin` roles. `family` users have no `home_id` in their JWT — their active home is resolved per-request via the `X-Active-Home-Id` header (AD-18).
 
 ### AD-9 — [ADOPTED] Photo pipeline resilience
 
@@ -95,7 +96,7 @@ graph LR
 
 - **Binds:** every family-facing endpoint that takes a `residentId` (`photos`, `events` registration, `meals` orders, resident profile)
 - **Prevents:** a family member seeing or acting on a resident within their *own* home who isn't *their* linked resident — AD-1 only closes the cross-home gap, not this finer one.
-- **Rule:** a `FamilyResidentGuard` checks a `FAMILY_LINK` row exists for `(user_id, resident_id)` before the request reaches the Service, applied at the controller level. Staff/admin/super_admin are exempt (they're already scoped by `home_id` or global per AD-1).
+- **Rule:** a `FamilyResidentGuard` checks **both** (1) a `FAMILY_LINK` row exists for `(user_id, resident_id)` AND (2) the user has a `HOME_MEMBERSHIP` in the `home_id` of the target resident — before the request reaches the Service, applied at the controller level. Staff/admin/super_admin are exempt (they're already scoped by `home_id` or global per AD-1). The dual check prevents a family member who has links to residents across multiple homes from acting on a resident whose home they no longer have access to.
 
 ### AD-12 — RBAC is a first-class mechanism
 
@@ -132,6 +133,12 @@ graph LR
 - **Binds:** `apps/api` → Neon
 - **Prevents:** connection exhaustion at NFR12's 2,000-concurrent-user target — a horizontally-scaled API on Render, each holding its own Prisma connection pool, against serverless Postgres is the classic way this fails.
 - **Rule:** Prisma's `DATABASE_URL` points at Neon's pooled (PgBouncer-compatible) connection string, not the direct one; Prisma's own `connection_limit` is tuned per Render instance so the total across instances stays under Neon's pooled ceiling.
+
+### AD-18 — Family home context is session-scoped, not token-scoped
+
+- **Binds:** `auth` module, `apps/mobile`, `apps/admin` (family flows)
+- **Prevents:** a family member with access to multiple homes from being locked into a single home by their JWT, or having to re-authenticate to switch homes.
+- **Rule:** `family` users carry no `home_id` in their JWT. On every request, the client sends the desired active home in the `X-Active-Home-Id` header. Auth middleware validates the header value against the user's `HOME_MEMBERSHIP` rows and populates `AsyncLocalStorage` with it. The active home persists client-side in-memory during a session (alongside the resident-switcher selection in UX-DR9); changing it re-scopes all visible data without re-authentication. `staff`, `admin`, and `super_admin` users are unaffected — their `home_id` remains in the JWT, fixed.
 
 ## Consistency Conventions
 
@@ -211,7 +218,8 @@ graph TB
 ```mermaid
 erDiagram
     HOME { uuid id }
-    USER { uuid id, string role, uuid home_id }
+    USER { uuid id, string role }
+    HOME_MEMBERSHIP { uuid id, uuid user_id, uuid home_id, string role }
     RESIDENT { uuid id, uuid home_id }
     FAMILY_LINK { uuid user_id, uuid resident_id }
     CONTENT_ITEM { uuid id, uuid home_id, string type }
@@ -222,7 +230,8 @@ erDiagram
     MEAL_ORDER { uuid id, uuid menu_item_id, uuid resident_id, uuid ordered_by_user_id }
     DEVICE_TOKEN { uuid id, uuid user_id }
 
-    HOME ||--o{ USER : "staff/admins"
+    USER ||--o{ HOME_MEMBERSHIP : "belongs to"
+    HOME ||--o{ HOME_MEMBERSHIP : "has members"
     HOME ||--o{ RESIDENT : "houses"
     HOME ||--o{ CONTENT_ITEM : "publishes"
     HOME ||--o{ EVENT : "hosts"

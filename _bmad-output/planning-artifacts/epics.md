@@ -132,7 +132,7 @@ NFR16: CSV exports complete within 10 seconds for up to 5,000 rows
 
 - No starter template is specified in Architecture; Epic 1 Story 1 must scaffold the pnpm workspace monorepo from scratch (`apps/api`, `apps/admin`, `apps/mobile`, `packages/shared-types`) per AD-2.
 - Monorepo with single API-contract source of truth: `packages/shared-types` is the only place API request/response types are defined; CI validates API responses against these types (AD-2).
-- Multi-tenant isolation infra: auth middleware resolves `home_id` into `AsyncLocalStorage` request-scoped context; a Prisma Client Extension auto-injects `home_id` into every query; every tenant-scoped table has Postgres RLS with `FORCE ROW LEVEL SECURITY` and a composite index leading with `home_id` (AD-1).
+- Multi-tenant isolation infra: auth middleware resolves `home_id` into `AsyncLocalStorage` request-scoped context — `staff`/`admin`/`super_admin` from the JWT, `family` from the `X-Active-Home-Id` header (AD-1); a Prisma Client Extension auto-injects `home_id` into every query; every tenant-scoped table has Postgres RLS with `FORCE ROW LEVEL SECURITY` and a composite index leading with `home_id` (AD-1).
 - `@BypassTenantScope()` decorator (narrow, per-endpoint, audit-logged) for legitimate cross-home super_admin operations (AD-1).
 - JWT access + refresh tokens stored in platform keychain; `@nestjs/throttler` rate-limits login/password-reset; `PasswordResetToken` with 1-hour expiry, rejected if used or expired (AD-8).
 - Cloudinary signed-upload flow: client requests a signed upload from the API and uploads the binary directly to Cloudinary (never proxied); Postgres stores only `cloudinary_public_id` + metadata, never a pre-built transform URL (AD-4).
@@ -434,17 +434,22 @@ So that new users can join without any self-service registration path existing.
 **Acceptance Criteria:**
 
 **Given** I am a home admin
-**When** I enter an email and select "staff" role
-**Then** a pending `User` record is created with role `staff` scoped to my home
+**When** I enter an email and select "staff" role for a new user
+**Then** a pending `User` record is created with role `staff` and a single `HOME_MEMBERSHIP` scoped to my home
 **And** an activation email is sent (same mechanism as Story 1.3/1.7) (FR11)
 
-**Given** I am a home admin or staff with the appropriate permission
-**When** I enter a family member's email
-**Then** a pending `User` record is created with role `family` scoped to my home — this is the pending account Story 1.8's invite-code onboarding later resolves
+**Given** I attempt to invite an existing staff or admin user from another home
+**When** I submit the invite
+**Then** the request is rejected — non-family roles are strictly single-home (AD-1, AD-18)
 
-**Given** the invited email already exists in the system for a different home
-**When** I attempt to invite it
-**Then** I see an inline error rather than a silent cross-home account merge (NFR7, AD-1)
+**Given** I am a home admin or staff with the appropriate permission
+**When** I enter a family member's email not yet in the system
+**Then** a pending `User` record is created with role `family` and a new `HOME_MEMBERSHIP` scoped to my home — this is the pending account Story 1.8's invite-code onboarding later resolves
+
+**Given** the invited email already belongs to an existing family user in a different home
+**When** I attempt to invite it to my home
+**Then** a new `HOME_MEMBERSHIP` is created for the existing user scoped to my home, no duplicate `User` record is created, and the existing user gains access to both homes (AD-18)
+**And** an activation notification is sent for the new home (same mechanism as Story 1.3/1.7)
 
 **Given** I attempt to invite a user at or above my own role level (e.g. staff inviting a home admin)
 **When** I submit the invite
