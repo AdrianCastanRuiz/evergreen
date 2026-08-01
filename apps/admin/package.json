@@ -1,0 +1,12 @@
+{
+  "name": "@evergreen/admin",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Vite + React admin portal (staff/admin/super_admin). Scaffolded in a later phase.",
+  "scripts": {
+    "dev": "echo \"apps/admin not implemented yet\" && exit 0",
+    "build": "echo \"apps/admin not implemented yet\" && exit 0",
+    "test": "echo \"apps/admin not implemented yet\" && exit 0",
+    "lint": "echo \"apps/admin not implemented yet\" && exit 0"
+  }
+}

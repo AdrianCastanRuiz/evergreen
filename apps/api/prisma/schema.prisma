@@ -1,0 +1,285 @@
+// Evergreen — core data model (ARCHITECTURE-SPINE.md Core-Entity ERD).
+// Naming: Prisma fields camelCase; DB columns/tables snake_case via @map/@@map
+// (Consistency Conventions). Every tenant-scoped table carries home_id with a
+// composite index leading with it, and gets RLS in a follow-up migration (AD-1).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  family
+  staff
+  admin
+  super_admin
+
+  @@map("role")
+}
+
+enum ContentType {
+  news
+  notice
+  announcement
+  static_page
+  document
+  schedule
+
+  @@map("content_type")
+}
+
+enum Platform {
+  ios
+  android
+
+  @@map("platform")
+}
+
+model Home {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  address   String?
+  timezone  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  memberships   HomeMembership[]
+  residents     Resident[]
+  contentItems  ContentItem[]
+  photos        Photo[]
+  events        Event[]
+  mealMenuItems MealMenuItem[]
+  familyLinks   FamilyLink[]
+  registrations EventRegistration[]
+  mealOrders    MealOrder[]
+  deviceTokens  DeviceToken[]
+
+  @@map("homes")
+}
+
+// Global account. `role` is the user's primary role (AD-12). staff/admin
+// carry exactly one HomeMembership (their fixed home); super_admin carries
+// none; family may carry several (AD-18).
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String?  @map("password_hash")
+  name         String?
+  role         Role
+  isActive     Boolean  @default(false) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  memberships         HomeMembership[]
+  familyLinks         FamilyLink[]
+  deviceTokens        DeviceToken[]
+  passwordResetTokens PasswordResetToken[]
+  photosUploaded      Photo[]              @relation("PhotoUploadedBy")
+  eventsCreated       Event[]              @relation("EventCreatedBy")
+  registrationsMade   EventRegistration[]  @relation("RegistrationRequestedBy")
+  mealOrdersMade      MealOrder[]          @relation("MealOrderedBy")
+  contentCreated      ContentItem[]        @relation("ContentCreatedBy")
+
+  @@map("users")
+}
+
+model HomeMembership {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  homeId    String   @map("home_id") @db.Uuid
+  role      Role
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  home Home @relation(fields: [homeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, homeId])
+  @@index([homeId, userId])
+  @@map("home_memberships")
+}
+
+model Resident {
+  id                   String    @id @default(uuid()) @db.Uuid
+  homeId               String    @map("home_id") @db.Uuid
+  name                 String
+  room                 String?
+  dob                  DateTime? @db.Date
+  profilePhotoPublicId String?   @map("profile_photo_public_id")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  home          Home                @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  familyLinks   FamilyLink[]
+  photos        Photo[]
+  registrations EventRegistration[]
+  mealOrders    MealOrder[]
+
+  @@index([homeId])
+  @@map("residents")
+}
+
+model FamilyLink {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  residentId String   @map("resident_id") @db.Uuid
+  homeId     String   @map("home_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resident Resident @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  home     Home     @relation(fields: [homeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, residentId])
+  @@index([homeId, userId])
+  @@map("family_links")
+}
+
+// Generic content table backing news/notice/announcement/static_page/document/
+// schedule. Weekly menus are explicitly NOT a ContentItem type (AD-5).
+model ContentItem {
+  id            String      @id @default(uuid()) @db.Uuid
+  homeId        String      @map("home_id") @db.Uuid
+  type          ContentType
+  title         String
+  body          String
+  attachmentUrl String?     @map("attachment_url")
+  publishedAt   DateTime?   @map("published_at")
+  createdById   String      @map("created_by") @db.Uuid
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  home      Home @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  createdBy User @relation("ContentCreatedBy", fields: [createdById], references: [id])
+
+  @@index([homeId, type, publishedAt])
+  @@map("content_items")
+}
+
+// Binary lives in Cloudinary (AD-4) — only the public_id is stored here,
+// never a pre-built transformation URL.
+model Photo {
+  id                 String   @id @default(uuid()) @db.Uuid
+  homeId             String   @map("home_id") @db.Uuid
+  residentId         String   @map("resident_id") @db.Uuid
+  cloudinaryPublicId String   @map("cloudinary_public_id")
+  caption            String?
+  uploadedById        String  @map("uploaded_by") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  home       Home     @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  resident   Resident @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  uploadedBy User     @relation("PhotoUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([homeId, residentId, createdAt])
+  @@map("photos")
+}
+
+model Event {
+  id          String   @id @default(uuid()) @db.Uuid
+  homeId      String   @map("home_id") @db.Uuid
+  title       String
+  description String?
+  location    String?
+  date        DateTime
+  capacity    Int?
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  home          Home                @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  createdBy     User                @relation("EventCreatedBy", fields: [createdById], references: [id])
+  registrations EventRegistration[]
+
+  @@index([homeId, date])
+  @@map("events")
+}
+
+model EventRegistration {
+  id            String   @id @default(uuid()) @db.Uuid
+  homeId        String   @map("home_id") @db.Uuid
+  eventId       String   @map("event_id") @db.Uuid
+  residentId    String   @map("resident_id") @db.Uuid
+  requestedById String   @map("requested_by_user_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  home        Home     @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  resident    Resident @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  requestedBy User     @relation("RegistrationRequestedBy", fields: [requestedById], references: [id])
+
+  @@unique([eventId, residentId])
+  @@index([homeId, eventId])
+  @@map("event_registrations")
+}
+
+model MealMenuItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  homeId    String   @map("home_id") @db.Uuid
+  day       DateTime @db.Date
+  mealName  String   @map("meal_name")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  home   Home        @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  orders MealOrder[]
+
+  @@index([homeId, day])
+  @@map("meal_menu_items")
+}
+
+model MealOrder {
+  id          String   @id @default(uuid()) @db.Uuid
+  homeId      String   @map("home_id") @db.Uuid
+  menuItemId  String   @map("menu_item_id") @db.Uuid
+  residentId  String   @map("resident_id") @db.Uuid
+  orderedById String   @map("ordered_by_user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  home      Home         @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  menuItem  MealMenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  resident  Resident     @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  orderedBy User         @relation("MealOrderedBy", fields: [orderedById], references: [id])
+
+  @@unique([menuItemId, residentId])
+  @@index([homeId, menuItemId])
+  @@map("meal_orders")
+}
+
+// Home-scoped per AD-10 so every dispatch query filters by home_id directly.
+model DeviceToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  homeId    String   @map("home_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String
+  platform  Platform
+  isDead    Boolean  @default(false) @map("is_dead")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  home Home @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, token])
+  @@index([homeId, userId])
+  @@map("device_tokens")
+}
+
+// Not tenant-scoped: a reset/activation link is account-level, consumed by
+// token value regardless of home (AD-8).
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}

@@ -1,0 +1,8 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  '@prisma/engines': true
+  '@sentry/node-cpu-profiler': true
+  prisma: true
+  unrs-resolver: true

@@ -1,0 +1,14 @@
+{
+  "name": "evergreen",
+  "private": true,
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter ./apps/* run dev",
+    "build": "pnpm --filter ./apps/* run build",
+    "test": "pnpm --filter ./apps/* run test",
+    "lint": "pnpm --filter ./apps/* run lint"
+  }
+}

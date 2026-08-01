@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: evergreen-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evergreen
+      POSTGRES_PASSWORD: evergreen
+      POSTGRES_DB: evergreen
+    ports:
+      - "5432:5432"
+    volumes:
+      - evergreen-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  evergreen-postgres-data:
