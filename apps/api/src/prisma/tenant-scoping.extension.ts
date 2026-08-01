@@ -1,5 +1,5 @@
 import type { PrismaPg } from '@prisma/adapter-pg';
-import { Prisma, PrismaClient } from '../../generated/prisma/client.js';
+import { Prisma, PrismaClient } from '../../generated/prisma';
 import type { TenantContextService } from '../common/tenant/tenant-context.service';
 import { TENANT_SCOPED_MODELS } from './tenant-scoped-models';
 

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { Role } from '../../../generated/prisma/enums.js';
+import type { Role } from '../../../generated/prisma';
 
 export interface TenantStore {
   userId: string | null;

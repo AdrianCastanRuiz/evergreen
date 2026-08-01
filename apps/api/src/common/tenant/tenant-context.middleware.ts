@@ -2,7 +2,7 @@ import { Injectable, Logger, NestMiddleware } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { NextFunction, Request, Response } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { Role } from '../../../generated/prisma/enums.js';
+import type { Role } from '../../../generated/prisma';
 import {
   TenantContextService,
   type TenantStore,

@@ -3,8 +3,15 @@
 // (Consistency Conventions). Every tenant-scoped table carries home_id with a
 // composite index leading with it, and gets RLS in a follow-up migration (AD-1).
 
+// prisma-client-js (not the newer "prisma-client" TS-native generator):
+// that one emits pure ESM (import.meta.url unconditionally), which is
+// fundamentally incompatible with Jest/ts-jest running in CommonJS mode.
+// This generator's CJS output keeps the rest of the toolchain (Jest, nest
+// build, ts-node) standard, at the cost of not using Prisma 7's newest
+// runtime — revisit once Jest's ESM support (or Prisma's CJS interop for
+// the new generator) is less friction-prone.
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js"
   output   = "../generated/prisma"
 }
 
