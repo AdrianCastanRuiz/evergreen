@@ -37,4 +37,33 @@ export class TenantContextService {
   isBypassed(): boolean {
     return this.getStore()?.bypass ?? false;
   }
+
+  // Runs `fn` with the CURRENT store's `bypass` flag temporarily flipped on,
+  // then restored — for one-off cross-home lookups (e.g. resolving a fixed
+  // home_id at login, before request-scoped homeId is known) that need to
+  // read a tenant-scoped table without a homeId in context.
+  //
+  // Deliberately mutates the existing store object in place rather than
+  // nesting a new `run()` context: a `run()` call nested inside a store that
+  // is itself already inside a `run()` (i.e. anywhere past
+  // TenantContextMiddleware) does not reliably propagate through Prisma 7's
+  // WASM query engine — confirmed by direct reproduction. Mutating the
+  // store Prisma's extension already reads from sidesteps that entirely.
+  async runBypassed<T>(fn: () => Promise<T>): Promise<T> {
+    const store = this.getStore();
+    if (!store) {
+      throw new Error(
+        'runBypassed() called with no tenant context established — ' +
+          'must run within TenantContextMiddleware.',
+      );
+    }
+
+    const previousBypass = store.bypass;
+    store.bypass = true;
+    try {
+      return await fn();
+    } finally {
+      store.bypass = previousBypass;
+    }
+  }
 }

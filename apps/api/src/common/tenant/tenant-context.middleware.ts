@@ -2,20 +2,11 @@ import { Injectable, Logger, NestMiddleware } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { NextFunction, Request, Response } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { Role } from '../../../generated/prisma';
+import type { AccessTokenPayload } from '../auth/token-payload';
 import {
   TenantContextService,
   type TenantStore,
 } from './tenant-context.service';
-
-interface AccessTokenPayload {
-  sub: string;
-  role: Role;
-  // Present only for staff/admin/super_admin — their home is fixed at login
-  // (AD-1 rule 6). Absent for family, who never carry a home_id in the JWT
-  // (AD-18).
-  homeId?: string;
-}
 
 // Resolves the authenticated request's tenant context into AsyncLocalStorage
 // (AD-1 rule 1) before any Guard, Interceptor, or Service runs:
@@ -48,6 +39,9 @@ export class TenantContextMiddleware implements NestMiddleware {
         const payload = await this.jwtService.verifyAsync<AccessTokenPayload>(
           authHeader.slice('Bearer '.length),
         );
+        if (payload.type !== 'access') {
+          throw new Error('Not an access token');
+        }
         store.userId = payload.sub;
         store.role = payload.role;
 
