@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    # Ephemeral database for this run only — separate from the branch-per-PR
+    # Neon database used for anything that needs to persist across jobs
+    # (Deployment & Environments table, ARCHITECTURE-SPINE.md).
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: evergreen
+          POSTGRES_PASSWORD: evergreen
+          POSTGRES_DB: evergreen
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U evergreen"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://evergreen:evergreen@localhost:5432/evergreen?schema=public
+      DIRECT_URL: postgresql://evergreen:evergreen@localhost:5432/evergreen?schema=public
+      JWT_SECRET: ci-test-secret-not-for-production
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      # No `version:` here — it's read from package.json's "packageManager"
+      # field instead (pnpm/action-setup errors if both are set).
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck shared API contract (AD-2)
+        run: pnpm --filter @evergreen/shared-types run typecheck
+
+      # Migrations only ever run in CI/CD, never ad hoc from a developer
+      # machine (AD-6). This step applies them to the ephemeral CI database
+      # above; the separate deploy workflow applies them to Neon.
+      - name: Apply migrations
+        working-directory: apps/api
+        run: npx prisma migrate deploy
+
+      - name: Build
+        run: pnpm --filter @evergreen/api run build
+
+      - name: Lint
+        run: pnpm --filter @evergreen/api run lint
+
+      - name: Unit tests
+        run: pnpm --filter @evergreen/api run test
+
+      - name: E2E tests (tenant isolation suite lives here — see Deferred in ARCHITECTURE-SPINE.md)
+        run: pnpm --filter @evergreen/api run test:e2e

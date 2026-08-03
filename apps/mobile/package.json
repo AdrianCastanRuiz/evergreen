@@ -1,0 +1,12 @@
+{
+  "name": "@evergreen/mobile",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Expo React Native family/staff app. Scaffolded in a later phase.",
+  "scripts": {
+    "dev": "echo \"apps/mobile not implemented yet\" && exit 0",
+    "build": "echo \"apps/mobile not implemented yet\" && exit 0",
+    "test": "echo \"apps/mobile not implemented yet\" && exit 0",
+    "lint": "echo \"apps/mobile not implemented yet\" && exit 0"
+  }
+}

@@ -1,0 +1,35 @@
+name: Deploy — staging
+
+# Render's own GitHub integration auto-deploys the app on push to `staging`
+# (Deployment & Environments table, ARCHITECTURE-SPINE.md). This workflow's
+# job is the part Render doesn't do: running migrations against the
+# persistent Neon staging branch, which per AD-6 only ever happens here —
+# never ad hoc from a developer machine.
+on:
+  push:
+    branches: [staging]
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      # No `version:` here — it's read from package.json's "packageManager"
+      # field instead (pnpm/action-setup errors if both are set).
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations to Neon staging branch
+        working-directory: apps/api
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.STAGING_DIRECT_URL }}
