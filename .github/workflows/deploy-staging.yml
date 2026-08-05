@@ -13,6 +13,13 @@ jobs:
   migrate:
     runs-on: ubuntu-latest
     environment: staging
+    # Job-level, not just on the migrate step: Prisma 7's config file reads
+    # these at `prisma generate` time too, which runs as a postinstall hook
+    # during `pnpm install` below — scoping the vars to only the migrate
+    # step left install unable to resolve them.
+    env:
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.STAGING_DIRECT_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +37,3 @@ jobs:
       - name: Apply migrations to Neon staging branch
         working-directory: apps/api
         run: npx prisma migrate deploy
-        env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.STAGING_DIRECT_URL }}

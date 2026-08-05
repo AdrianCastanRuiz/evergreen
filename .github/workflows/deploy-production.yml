@@ -13,6 +13,13 @@ jobs:
   migrate-and-deploy:
     runs-on: ubuntu-latest
     environment: production
+    # Job-level, not just on the migrate step: Prisma 7's config file reads
+    # these at `prisma generate` time too, which runs as a postinstall hook
+    # during `pnpm install` below — scoping the vars to only the migrate
+    # step left install unable to resolve them.
+    env:
+      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,9 +37,6 @@ jobs:
       - name: Apply migrations to Neon production branch (AD-6)
         working-directory: apps/api
         run: npx prisma migrate deploy
-        env:
-          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
 
       - name: Trigger Render production deploy
         run: curl -fsS -X POST "${{ secrets.RENDER_PRODUCTION_DEPLOY_HOOK_URL }}"
