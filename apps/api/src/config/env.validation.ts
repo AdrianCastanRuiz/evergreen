@@ -16,4 +16,13 @@ export const envValidationSchema = Joi.object({
 
   // Optional — the Sentry SDK no-ops when unset (AD-15).
   SENTRY_DSN: Joi.string().uri().allow('').optional(),
+
+  // Optional — MailService no-ops (logs instead of sending) when unset, same
+  // convention as SENTRY_DSN above, so local dev/CI need no real key (AD-14).
+  RESEND_API_KEY: Joi.string().allow('').optional(),
+  MAIL_FROM: Joi.string().allow('').optional(),
+
+  // Required: the frontend page that reads the `?token=` query param from a
+  // password-reset/activation email link (Story 1.7).
+  RESET_PASSWORD_URL: Joi.string().uri().required(),
 });
