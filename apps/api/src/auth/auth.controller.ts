@@ -13,8 +13,11 @@ import { Public } from '../common/auth/public.decorator';
 import { TenantContextService } from '../common/tenant/tenant-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService, type TokenPair } from './auth.service';
+import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
+import { PasswordResetService } from './password-reset.service';
 
 export interface MeResponse {
   id: string;
@@ -31,6 +34,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly tenantContext: TenantContextService,
     private readonly prisma: PrismaService,
+    private readonly passwordResetService: PasswordResetService,
   ) {}
 
   // NFR10/AD-8: tighter than the global default — 5 attempts/minute.
@@ -51,6 +55,33 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   refresh(@Body() dto: RefreshDto): Promise<TokenPair> {
     return this.authService.refresh(dto.refreshToken);
+  }
+
+  // Silently no-ops for an unknown email — same 204 either way, so the
+  // response can never be used to enumerate registered accounts (NFR9/AD-8).
+  // Also backs invited-account activation (Story 1.3/1.5): a pending
+  // account (isActive=false, no passwordHash) uses the same link.
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('password-reset')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  requestPasswordReset(@Body() dto: RequestPasswordResetDto): Promise<void> {
+    return this.passwordResetService.requestReset(dto.email);
+  }
+
+  // Looser than the request endpoint since a legitimate user may mistype
+  // their new password and retry, but still tighter than the global
+  // default (NFR10/AD-8). Does not return a token pair — the client
+  // navigates to login after a successful confirm (frozen spec boundary).
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('password-reset/confirm')
+  @HttpCode(HttpStatus.OK)
+  async confirmPasswordReset(
+    @Body() dto: ConfirmPasswordResetDto,
+  ): Promise<{ success: true }> {
+    await this.passwordResetService.confirmReset(dto.token, dto.newPassword);
+    return { success: true };
   }
 
   // Stateless JWTs: there is no server-side session to destroy. Deleting

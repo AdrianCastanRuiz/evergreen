@@ -11,6 +11,7 @@ import { BypassTenantScopeInterceptor } from './common/tenant/bypass-tenant-scop
 import { TenantContextMiddleware } from './common/tenant/tenant-context.middleware';
 import { TenantModule } from './common/tenant/tenant.module';
 import { envValidationSchema } from './config/env.validation';
+import { HomesModule } from './homes/homes.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -23,6 +24,7 @@ import { PrismaModule } from './prisma/prisma.module';
     PrismaModule,
     TenantModule,
     AuthModule,
+    HomesModule,
     // Global default; auth endpoints override it with a tighter @Throttle()
     // (NFR10, AD-8).
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 60 }]),

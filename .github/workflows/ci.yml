@@ -30,6 +30,9 @@ jobs:
       DIRECT_URL: postgresql://evergreen:evergreen@localhost:5432/evergreen?schema=public
       JWT_SECRET: ci-test-secret-not-for-production
       NODE_ENV: test
+      # Required at boot (env.validation.ts) — CI never sends real reset
+      # emails, so any syntactically valid URL satisfies Joi here (Story 1.7).
+      RESET_PASSWORD_URL: http://localhost:5173/reset-password
     steps:
       - uses: actions/checkout@v4
 
