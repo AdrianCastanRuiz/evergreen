@@ -101,4 +101,82 @@ describe('MailService', () => {
     await jest.advanceTimersByTimeAsync(60_000);
     expect(sendMock).toHaveBeenCalledTimes(2);
   });
+
+  describe('sendAccountInviteEmail', () => {
+    it('sends distinct invite copy (not the reset-password copy) via Resend', async () => {
+      sendMock.mockResolvedValue({ data: { id: 'email-1' }, error: null });
+      const mailService = await buildService('re_test_key');
+
+      await mailService.sendAccountInviteEmail(
+        'admin@b.com',
+        'raw-token',
+        'Evergreen Oaks',
+      );
+
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      const [sendArgs] = sendMock.mock.calls[0] as [
+        { to: string; from: string; subject: string; html: string },
+      ];
+      expect(sendArgs.to).toBe('admin@b.com');
+      expect(sendArgs.subject).toBe("You've been invited to Evergreen");
+      expect(sendArgs.html).toContain('Evergreen Oaks');
+      expect(sendArgs.html).toContain(
+        'http://localhost:5173/reset-password?token=raw-token',
+      );
+      expect(sendArgs.html).not.toContain('We received a request to reset');
+    });
+
+    it('no-ops when RESEND_API_KEY is unset', async () => {
+      const mailService = await buildService('');
+
+      await mailService.sendAccountInviteEmail(
+        'admin@b.com',
+        'raw-token',
+        'Evergreen Oaks',
+      );
+
+      expect(sendMock).not.toHaveBeenCalled();
+    });
+
+    it('HTML-escapes a home name containing markup, instead of injecting it verbatim', async () => {
+      sendMock.mockResolvedValue({ data: { id: 'email-1' }, error: null });
+      const mailService = await buildService('re_test_key');
+
+      await mailService.sendAccountInviteEmail(
+        'admin@b.com',
+        'raw-token',
+        'Oaks <img src=x onerror=alert(1)> & "Sons"',
+      );
+
+      const [sendArgs] = sendMock.mock.calls[0] as [{ html: string }];
+      expect(sendArgs.html).not.toContain('<img');
+      expect(sendArgs.html).toContain(
+        'Oaks &lt;img src=x onerror=alert(1)&gt; &amp; &quot;Sons&quot;',
+      );
+    });
+
+    it('retries at 60s -> 5min -> 30min on failure, then gives up and reports to Sentry', async () => {
+      jest.useFakeTimers();
+      sendMock.mockRejectedValue(new Error('network down'));
+      const mailService = await buildService('re_test_key');
+
+      await mailService.sendAccountInviteEmail(
+        'admin@b.com',
+        'raw-token',
+        'Evergreen Oaks',
+      );
+      expect(sendMock).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(60_000);
+      expect(sendMock).toHaveBeenCalledTimes(2);
+
+      await jest.advanceTimersByTimeAsync(5 * 60_000);
+      expect(sendMock).toHaveBeenCalledTimes(3);
+
+      await jest.advanceTimersByTimeAsync(30 * 60_000);
+      expect(sendMock).toHaveBeenCalledTimes(4);
+
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    });
+  });
 });
