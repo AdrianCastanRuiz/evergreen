@@ -138,6 +138,23 @@ describe('MailService', () => {
       expect(sendMock).not.toHaveBeenCalled();
     });
 
+    it('HTML-escapes a home name containing markup, instead of injecting it verbatim', async () => {
+      sendMock.mockResolvedValue({ data: { id: 'email-1' }, error: null });
+      const mailService = await buildService('re_test_key');
+
+      await mailService.sendAccountInviteEmail(
+        'admin@b.com',
+        'raw-token',
+        'Oaks <img src=x onerror=alert(1)> & "Sons"',
+      );
+
+      const [sendArgs] = sendMock.mock.calls[0] as [{ html: string }];
+      expect(sendArgs.html).not.toContain('<img');
+      expect(sendArgs.html).toContain(
+        'Oaks &lt;img src=x onerror=alert(1)&gt; &amp; &quot;Sons&quot;',
+      );
+    });
+
     it('retries at 60s -> 5min -> 30min on failure, then gives up and reports to Sentry', async () => {
       jest.useFakeTimers();
       sendMock.mockRejectedValue(new Error('network down'));

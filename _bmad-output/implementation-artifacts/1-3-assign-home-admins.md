@@ -4,7 +4,7 @@ baseline_commit: 9dc3c1aedb3d6c6b9e9d17e5c8d56d9aa6c1479f
 
 # Story 1.3: Super Admin Assigns a Home Admin to a Care Home
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -36,6 +36,16 @@ so that each home has someone who can manage its residents, content, events, and
 - [x] **`HomesModule`** (`apps/api/src/homes/homes.module.ts`): imports `UsersModule`.
 - [x] **`deferred-work.md`**: documented the orphan-pending-user crash-window edge case.
 - [x] **Manual E2E verification against local Postgres** (docker-compose) — see Completion Notes for full transcript/results. All ACs verified against a real HTTP + Postgres round trip, not just mocked unit tests.
+
+### Review Findings
+
+- [x] [Review][Decision] Should this PR add an automated integration/e2e test for the `@BypassTenantScope()` + tenant-scoped `HomeMembership` write path? — **Resolved: yes.** Added `apps/api/test/homes-invite.e2e-spec.ts` (real Nest app + real local Postgres, mirrors `app.e2e-spec.ts` conventions). Writing it surfaced a genuine, previously-undetected bug: reading a tenant-scoped model back through `TenantContextService.run()` fails with "no home_id in request context" unless the query is `await`-ed *inside* the `run()` callback — `.findFirst()` returns a lazy `PrismaPromise`, and `AsyncLocalStorage`'s store is only active for async work spawned during the callback's own synchronous execution; returning the promise and awaiting it outside `run()` lets the context exit first. Fixed in the test itself, and — since `tenant-context.middleware.ts`'s `resolveFamilyActiveHomeId` had the exact same pattern (dormant only because no family-login flow exists yet, Story 1.5/1.8) — fixed there too, before it could bite a future story. (Acceptance Auditor)
+- [x] [Review][Patch] Token-issuance/email-dispatch failure after `HomeMembership` commit leaves a permanently orphaned, unrecoverable pending admin account [apps/api/src/users/users.service.ts:59-61] — the `try/catch` only wraps `homeMembership.create()`; `issueActivationToken` sits outside it, so if it throws, `User`+`HomeMembership` are already committed with no token/email, and the globally-unique email is now permanently blocked from re-invite via `409`. **Fixed:** widened the `try/catch` to cover both writes; `rollbackPendingUser` deletes the orphaned `User` (cascades to `HomeMembership`) on any failure past that point. Covered by a new `users.service.spec.ts` case. (Blind Hunter + Edge Case Hunter)
+- [x] [Review][Patch] Rollback's own `user.delete` is unguarded — its failure masks the original error and leaves the orphan undeleted [apps/api/src/users/users.service.ts:50-56] — if the compensating delete itself fails (same transient cause as the original `homeMembership.create` failure), its exception replaces `error` in the throw, losing the real cause and skipping cleanup. **Fixed:** `rollbackPendingUser` now wraps the delete in its own `try/catch`, logs + reports the delete failure to Sentry, and still (re)throws the *original* error. Covered by a new `users.service.spec.ts` case. (Blind Hunter + Edge Case Hunter)
+- [x] [Review][Patch] `Home.name` interpolated unescaped into the invite email HTML [apps/api/src/notifications/mail.service.ts buildInviteHtml] — `homeName` is only validated by length/type (`CreateHomeDto`), not character-restricted, and is injected verbatim into a real outbound Resend HTML email with no escaping — a stored-content injection surface this diff introduces (the sibling `buildResetHtml` never interpolates untrusted content). **Fixed:** added `MailService.escapeHtml`, applied to `homeName` in `buildInviteHtml`. Covered by a new `mail.service.spec.ts` case. (Edge Case Hunter)
+- [x] [Review][Patch] Debug Log Reference mislabels AC #4 verification [homes.controller.ts:65 `inviteAdmin`; this story's Debug Log step 9] — the manual E2E tested "no bearer token → `401`" (authentication), not AC #4's actual scenario ("authenticated non-super-admin → `403`"); that scenario currently had zero verification anywhere for this route. **Fixed:** added an e2e test (`homes-invite.e2e-spec.ts`) that seeds an authenticated `staff` user and asserts `403`; original Debug Log wording below corrected to stop overclaiming AC #4 coverage. (Acceptance Auditor)
+- [x] [Review][Defer] Concurrent identical-email invites can produce a transient false-negative `409` if the winning request later rolls back [apps/api/src/users/users.service.ts:44-57] — deferred, extension of the already-accepted sequential-writes tradeoff (Critical Risk #2). (Edge Case Hunter)
+- [x] [Review][Defer] Non-UUID `:id` on `/homes/:id/admins` reaches an unguarded Postgres cast, surfacing a raw `500` instead of a clean `404` [homes.controller.ts:65, homes.service.ts:28-32] — deferred, pre-existing gap shared with `GET`/`PATCH /homes/:id`, not introduced by this diff. (Edge Case Hunter)
 
 ## Dev Notes
 
@@ -121,9 +131,16 @@ claude-sonnet-5
   6. API log confirmed `TenantScopeBypass` audit-logged `HomesController.inviteAdmin` (AD-1 rule 5), and `MailService` logged the **invite-specific** copy ("would have sent account invite email"), not the reset-password copy.
   7. AC #3: re-invited the same email → **`409`** `"A user with this email already exists"`.
   8. Unknown `homeId` → **`404`** `"Home not found"`, no user/membership rows created (verified `findOne`'s 404 fires before any write).
-  9. AC #4: no bearer token → **`401`**.
+  9. No bearer token → **`401`** — this is an *authentication* check, not AC #4's actual *authorization* scenario. **Code-review correction:** the original version of this note claimed this verified AC #4; it did not. AC #4 (authenticated non-super_admin → `403`) had zero verification anywhere until the `homes-invite.e2e-spec.ts` test added during code review, which seeds an authenticated `staff` user and asserts `403`.
   10. Cleaned up all E2E-seeded rows from the local dev DB afterward.
   - This confirms Critical Risks #1 and #2 from Dev Notes did not materialize: `@BypassTenantScope()` worked correctly on its first real usage, and the two sequential (non-nested-transaction) writes landed the `HomeMembership` with the right `home_id`.
+
+### Code Review Follow-up (2026-08-07)
+
+- Added `apps/api/test/homes-invite.e2e-spec.ts`: automated e2e coverage (real Nest app + real local Postgres) for the `@BypassTenantScope()` + `HomeMembership` write path, the true AC #4 scenario (403 for an authenticated non-super_admin), and the response/DB-state assertions the manual transcript above previously covered only by hand.
+- Writing that test surfaced a real, previously-undetected bug in **pre-existing** code: `tenant-context.middleware.ts`'s `resolveFamilyActiveHomeId` reads a tenant-scoped model through a fresh `TenantContextService.run()` call without awaiting the query *inside* the callback — `.findFirst()` returns a lazy `PrismaPromise`, and `AsyncLocalStorage`'s context is only guaranteed active for async work spawned during the callback's own synchronous execution. Dormant today only because no family-login flow exists yet (Story 1.5/1.8 aren't built); fixed proactively before it could bite a future story, with the same fix pattern applied in the new test itself.
+- Fixed 4 patch findings from adversarial code review (Blind Hunter, Edge Case Hunter, Acceptance Auditor): widened `UsersService`'s rollback scope to also cover token-issuance failure, guarded the rollback's own `delete` against masking the original error, HTML-escaped `homeName` in the invite email (stored-content injection), and added the missing AC #4 test. See `### Review Findings` above for full detail per finding.
+- 2 findings deferred (concurrent-invite race, non-UUID `:id` → raw 500) — both written to `deferred-work.md`, neither blocking.
 
 ### Completion Notes List
 
@@ -139,15 +156,20 @@ claude-sonnet-5
 - `apps/api/src/users/users.module.ts`
 - `apps/api/src/users/users.service.ts`
 - `apps/api/src/users/users.service.spec.ts`
+- `apps/api/test/homes-invite.e2e-spec.ts` (code review follow-up)
 
 **Modified:**
 - `apps/api/src/auth/password-reset.service.ts` (extracted `issueActivationToken`)
-- `apps/api/src/notifications/mail.service.ts` (added `sendAccountInviteEmail`, refactored retry internals to a shared params object)
-- `apps/api/src/notifications/mail.service.spec.ts` (added `sendAccountInviteEmail` coverage)
+- `apps/api/src/notifications/mail.service.ts` (added `sendAccountInviteEmail`, refactored retry internals to a shared params object; code review: HTML-escape `homeName`)
+- `apps/api/src/notifications/mail.service.spec.ts` (added `sendAccountInviteEmail` coverage; code review: HTML-escape test)
 - `apps/api/src/homes/homes.controller.ts` (added `POST /homes/:id/admins`)
 - `apps/api/src/homes/homes.module.ts` (imports `UsersModule`)
+- `apps/api/src/users/users.service.ts` (code review: widened rollback scope, guarded compensating delete)
+- `apps/api/src/users/users.service.spec.ts` (code review: 2 new rollback-scenario tests)
+- `apps/api/src/common/tenant/tenant-context.middleware.ts` (code review: fixed latent AsyncLocalStorage/PrismaPromise bug in `resolveFamilyActiveHomeId`, found while writing e2e coverage)
 - `_bmad-output/implementation-artifacts/deferred-work.md` (documented orphan-user edge case)
 
 ## Change Log
 
 - 2026-08-07: Story implemented — invite-a-home-admin endpoint, reusing Story 1.7's token/email infrastructure. All ACs verified via unit tests + manual E2E against local Postgres. Status → review.
+- 2026-08-07: Adversarial code review (Blind Hunter + Edge Case Hunter + Acceptance Auditor, PR #10) — 1 decision resolved (added automated e2e coverage, which also surfaced and fixed a latent pre-existing bug in `tenant-context.middleware.ts`), 4 patches applied (rollback scope, rollback error-masking, HTML-escape email injection, real AC #4 test), 2 low-severity items deferred to `deferred-work.md`. 45 unit + 3 e2e tests passing, build/lint clean. Status → done.

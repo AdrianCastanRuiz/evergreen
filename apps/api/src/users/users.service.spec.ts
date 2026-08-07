@@ -1,10 +1,13 @@
 import { ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import * as Sentry from '@sentry/nestjs';
 import { Prisma } from '../../generated/prisma';
 import { PasswordResetService } from '../auth/password-reset.service';
 import { MailService } from '../notifications/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from './users.service';
+
+jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
 
 describe('UsersService', () => {
   let usersService: UsersService;
@@ -30,6 +33,7 @@ describe('UsersService', () => {
   });
 
   beforeEach(async () => {
+    jest.clearAllMocks();
     prisma = {
       client: {
         user: { create: jest.fn(), delete: jest.fn() },
@@ -127,6 +131,47 @@ describe('UsersService', () => {
       });
       expect(passwordResetService.issueActivationToken).not.toHaveBeenCalled();
       expect(mailService.sendAccountInviteEmail).not.toHaveBeenCalled();
+    });
+
+    it('rolls back the orphaned pending User when token issuance fails after HomeMembership already succeeded', async () => {
+      prisma.client.user.create.mockResolvedValue(pendingUser);
+      prisma.client.homeMembership.create.mockResolvedValue({});
+      const tokenError = new Error('token insert failed');
+      passwordResetService.issueActivationToken.mockRejectedValue(tokenError);
+
+      await expect(
+        usersService.createPendingHomeAdmin(
+          'home-1',
+          'admin@evergreen.test',
+          'Evergreen Oaks',
+        ),
+      ).rejects.toBe(tokenError);
+
+      expect(prisma.client.homeMembership.create).toHaveBeenCalledWith({
+        data: { userId: 'user-1', homeId: 'home-1', role: 'admin' },
+      });
+      expect(prisma.client.user.delete).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+      });
+      expect(mailService.sendAccountInviteEmail).not.toHaveBeenCalled();
+    });
+
+    it('reports to Sentry (without losing the original error) when the rollback delete itself fails', async () => {
+      prisma.client.user.create.mockResolvedValue(pendingUser);
+      const membershipError = new Error('membership insert failed');
+      prisma.client.homeMembership.create.mockRejectedValue(membershipError);
+      const deleteError = new Error('delete also failed');
+      prisma.client.user.delete.mockRejectedValue(deleteError);
+
+      await expect(
+        usersService.createPendingHomeAdmin(
+          'home-1',
+          'admin@evergreen.test',
+          'Evergreen Oaks',
+        ),
+      ).rejects.toBe(membershipError);
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(deleteError);
     });
   });
 });

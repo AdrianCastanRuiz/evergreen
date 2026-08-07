@@ -1,4 +1,5 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import type { Role } from '../../generated/prisma';
 import { Prisma } from '../../generated/prisma';
 import { PasswordResetService } from '../auth/password-reset.service';
@@ -15,6 +16,8 @@ export interface PendingUserResponse {
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly passwordResetService: PasswordResetService,
@@ -43,22 +46,21 @@ export class UsersService {
 
     const user = await this.createUser(normalizedEmail, role);
 
+    // Everything from here on rolls back to a clean state on any failure —
+    // not just the HomeMembership write (code-review finding: the original
+    // version only guarded that one call, leaving a committed User+
+    // HomeMembership with no token/email, and thus a permanently
+    // unrecoverable invite, if the token write below failed instead).
+    let rawToken: string;
     try {
       await this.prisma.client.homeMembership.create({
         data: { userId: user.id, homeId, role },
       });
+      rawToken = await this.passwordResetService.issueActivationToken(user.id);
     } catch (error) {
-      // Roll back the orphaned pending user so a retry doesn't hit the
-      // email-uniqueness conflict below for an account that never got its
-      // membership (see Dev Notes — remaining crash-window edge case is
-      // documented in deferred-work.md).
-      await this.prisma.client.user.delete({ where: { id: user.id } });
+      await this.rollbackPendingUser(user.id, error);
       throw error;
     }
-
-    const rawToken = await this.passwordResetService.issueActivationToken(
-      user.id,
-    );
 
     // Fire-and-forget, same convention as PasswordResetService.requestReset:
     // never block the HTTP response on third-party email delivery.
@@ -67,6 +69,29 @@ export class UsersService {
       .catch(() => {});
 
     return { ...user, homeId };
+  }
+
+  // HomeMembership cascades on User delete (schema's onDelete: Cascade), so
+  // this one delete cleans up both rows regardless of which step above
+  // failed — so a retry after a transient failure doesn't hit the
+  // email-uniqueness conflict for an account that never fully got set up
+  // (remaining crash-window edge case documented in deferred-work.md).
+  private async rollbackPendingUser(
+    userId: string,
+    originalError: unknown,
+  ): Promise<void> {
+    try {
+      await this.prisma.client.user.delete({ where: { id: userId } });
+    } catch (deleteError) {
+      // The compensating delete can itself fail for the same transient
+      // reason the original write did — report both instead of letting the
+      // delete's exception silently replace and hide the original one
+      // (code-review finding).
+      this.logger.error(
+        `Failed to roll back orphaned pending user ${userId} after: ${String(originalError)}`,
+      );
+      Sentry.captureException(deleteError);
+    }
   }
 
   private async createUser(

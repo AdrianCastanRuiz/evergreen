@@ -147,10 +147,23 @@ export class MailService {
 
   private buildInviteHtml(link: string, homeName: string): string {
     return (
-      `<p>You've been invited to help manage <strong>${homeName}</strong> on Evergreen.</p>` +
+      `<p>You've been invited to help manage <strong>${this.escapeHtml(homeName)}</strong> on Evergreen.</p>` +
       `<p><a href="${link}">Click here to set your password</a> and activate your account. ` +
       'This link expires in 1 hour and can only be used once.</p>' +
       "<p>If you weren't expecting this invite, you can safely ignore this email.</p>"
     );
+  }
+
+  // `homeName` is user-supplied (Home.name, only length/type-validated) and
+  // gets interpolated into a real outbound HTML email — escape it so a home
+  // named e.g. `Oaks <img onerror=...>` can't inject markup into the
+  // invitee's inbox (code-review finding).
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 }
