@@ -492,6 +492,22 @@ So that I can use the app without friction across sessions.
 **When** it renders
 **Then** it uses `{typography.hero}` for the greeting per DESIGN.md
 
+**Given** the login endpoint returns `429 Too Many Requests` (rate limit exceeded — 5/min per AD-8)
+**When** the response arrives
+**Then** I see a clear, human message explaining the throttling (e.g. "Too many attempts. Please wait a minute and try again.") — never a generic error, never a silent no-op (NFR10, AD-8)
+
+**Given** a `429` on login
+**When** the app receives it
+**Then** it does not auto-retry the request or spin in a retry loop — further attempts happen only on explicit user action, so the client never re-triggers the rate limit itself
+
+**Given** a `429` on the refresh endpoint
+**When** the background refresh attempt is throttled
+**Then** the current screen stays intact and the session is not destroyed on the spot — the app waits and retries the refresh later, falling back to the session-expiry flow only if refresh keeps failing (NFR10, AD-8)
+
+**Given** the login request fails due to network loss or timeout
+**When** the failure occurs
+**Then** I see an inline connection error and my entered email/password are preserved so I can retry without re-typing — no crash, no token issued
+
 ### Story 1.7: Reset de contraseña y activación de cuenta invitada vía link de email
 
 As a user who forgot my password, or an invited staff/home admin/super admin,
@@ -524,6 +540,18 @@ So that I can regain or activate access to my account securely.
 **Given** email delivery fails transiently
 **When** Resend reports a transient failure
 **Then** the send retries at 60s → 5min → 30min before giving up (NFR15)
+
+**Given** the request-password-reset endpoint returns `429 Too Many Requests` (5/min per AD-8)
+**When** the response arrives
+**Then** I see a clear throttling message rather than a generic error — and the client does not auto-retry, so it never re-triggers the limit itself (NFR10, AD-8)
+
+**Given** the confirm-reset endpoint returns `429 Too Many Requests` (10/min per AD-8)
+**When** the response arrives
+**Then** I see a clear throttling message and the client does not auto-retry (NFR10, AD-8)
+
+**Given** a reset or activation attempt fails due to network loss or timeout
+**When** the failure occurs
+**Then** I see an inline connection error and my entered data is preserved so I can retry without re-typing — no crash
 
 ### Story 1.8: Onboarding — familia se une a un care home vía código de invitación
 
@@ -630,6 +658,18 @@ So that I understand my authentication state at all times.
 **Given** I am redirected due to session expiry
 **When** I land on login
 **Then** no stale queued write-action executes after re-authentication without my explicit re-confirmation
+
+**Given** a `429 Too Many Requests` on the refresh endpoint
+**When** the background refresh attempt is throttled
+**Then** the app does not immediately force logout — it treats throttling as transient, keeps the current screen, and retries the refresh later; only continued refresh failure triggers the session-expiry redirect (NFR10, AD-8)
+
+**Given** the refresh request fails due to network loss
+**When** the failure occurs
+**Then** the current screen stays intact with no data loss, and the app retries the refresh when connectivity returns — session is not destroyed on a transient network blip
+
+**Given** any authenticated API call returns `401`
+**When** it is not a refresh attempt
+**Then** the app triggers the session-expiry flow once (redirect to login with "Your session ended. Please log in again.") and does not cascade duplicate redirects from concurrent in-flight requests (FR7, UX-DR27)
 
 ### Story 1.12: Home admins gestionan usuarios y roles de su home
 
