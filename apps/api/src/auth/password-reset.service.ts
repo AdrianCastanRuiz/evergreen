@@ -30,13 +30,7 @@ export class PasswordResetService {
     });
     if (!user) return;
 
-    const rawToken = crypto.randomBytes(32).toString('base64url');
-    const tokenHash = this.hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
-
-    await this.prisma.client.passwordResetToken.create({
-      data: { userId: user.id, tokenHash, expiresAt },
-    });
+    const rawToken = await this.issueActivationToken(user.id);
 
     // Fire-and-forget: never await the email send from the request thread —
     // only the DB write, so response timing can't leak account existence
@@ -46,6 +40,22 @@ export class PasswordResetService {
     this.mailService
       .sendPasswordResetEmail(normalizedEmail, rawToken)
       .catch(() => {});
+  }
+
+  // Shared by requestReset (self-service) and UsersService's invite flow
+  // (Story 1.3): creates a single-use, 1h-expiry token for `userId` and
+  // returns the raw (unhashed) value — the only place it ever exists outside
+  // the emailed link.
+  async issueActivationToken(userId: string): Promise<string> {
+    const rawToken = crypto.randomBytes(32).toString('base64url');
+    const tokenHash = this.hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
+
+    await this.prisma.client.passwordResetToken.create({
+      data: { userId, tokenHash, expiresAt },
+    });
+
+    return rawToken;
   }
 
   async confirmReset(rawToken: string, newPassword: string): Promise<void> {

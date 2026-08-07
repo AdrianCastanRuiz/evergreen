@@ -41,19 +41,54 @@ export class MailService {
   // surfaced to the caller (who has already responded to the HTTP request
   // by the time this settles).
   sendPasswordResetEmail(email: string, rawToken: string): Promise<void> {
-    const link = new URL(this.resetPasswordUrl);
-    link.searchParams.set('token', rawToken);
-    return this.attemptSend(email, link.toString(), 0);
+    const link = this.buildLink(rawToken);
+    return this.attemptSend({
+      email,
+      subject: 'Reset your Evergreen password',
+      html: this.buildResetHtml(link),
+      logLabel: 'password reset email',
+      retryCount: 0,
+    });
   }
 
-  private async attemptSend(
+  // Story 1.3: invite-created pending accounts (home admins, and later
+  // additional super admins / staff / family) activate via the exact same
+  // token mechanism as a self-service reset — but the copy must not claim
+  // "we received a request to reset your password", since this person never
+  // requested anything.
+  sendAccountInviteEmail(
     email: string,
-    link: string,
-    retryCount: number,
+    rawToken: string,
+    homeName: string,
   ): Promise<void> {
+    const link = this.buildLink(rawToken);
+    return this.attemptSend({
+      email,
+      subject: "You've been invited to Evergreen",
+      html: this.buildInviteHtml(link, homeName),
+      logLabel: 'account invite email',
+      retryCount: 0,
+    });
+  }
+
+  private buildLink(rawToken: string): string {
+    const link = new URL(this.resetPasswordUrl);
+    link.searchParams.set('token', rawToken);
+    return link.toString();
+  }
+
+  private async attemptSend(params: {
+    email: string;
+    subject: string;
+    html: string;
+    logLabel: string;
+    retryCount: number;
+  }): Promise<void> {
+    const { email, subject, html, logLabel } = params;
+
     if (!this.resend) {
       this.logger.log(
-        `RESEND_API_KEY not set — would have sent password reset email to ${email}`,
+        `RESEND_API_KEY not set — would have sent ${logLabel} to ${email}`,
       );
       return;
     }
@@ -62,26 +97,30 @@ export class MailService {
       const { error } = await this.resend.emails.send({
         from: this.mailFrom,
         to: email,
-        subject: 'Reset your Evergreen password',
-        html: this.buildHtml(link),
+        subject,
+        html,
       });
       if (error) {
         throw new Error(`Resend API error (${error.name}): ${error.message}`);
       }
     } catch (err) {
-      this.scheduleRetryOrGiveUp(email, link, retryCount, err);
+      this.scheduleRetryOrGiveUp({ ...params, err });
     }
   }
 
-  private scheduleRetryOrGiveUp(
-    email: string,
-    link: string,
-    retryCount: number,
-    err: unknown,
-  ): void {
+  private scheduleRetryOrGiveUp(params: {
+    email: string;
+    subject: string;
+    html: string;
+    logLabel: string;
+    retryCount: number;
+    err: unknown;
+  }): void {
+    const { email, logLabel, retryCount, err } = params;
+
     if (retryCount >= RETRY_DELAYS_MS.length) {
       this.logger.error(
-        `Giving up sending password reset email to ${email} after ${RETRY_DELAYS_MS.length} retries`,
+        `Giving up sending ${logLabel} to ${email} after ${RETRY_DELAYS_MS.length} retries`,
       );
       Sentry.captureException(err);
       return;
@@ -89,20 +128,29 @@ export class MailService {
 
     const delayMs = RETRY_DELAYS_MS[retryCount];
     this.logger.warn(
-      `Failed to send password reset email to ${email}; retrying in ${delayMs}ms ` +
+      `Failed to send ${logLabel} to ${email}; retrying in ${delayMs}ms ` +
         `(retry ${retryCount + 1}/${RETRY_DELAYS_MS.length})`,
     );
     setTimeout(() => {
-      void this.attemptSend(email, link, retryCount + 1);
+      void this.attemptSend({ ...params, retryCount: retryCount + 1 });
     }, delayMs);
   }
 
-  private buildHtml(link: string): string {
+  private buildResetHtml(link: string): string {
     return (
       '<p>We received a request to reset your Evergreen password.</p>' +
       `<p><a href="${link}">Click here to set a new password</a>. ` +
       'This link expires in 1 hour and can only be used once.</p>' +
       "<p>If you didn't request this, you can safely ignore this email.</p>"
+    );
+  }
+
+  private buildInviteHtml(link: string, homeName: string): string {
+    return (
+      `<p>You've been invited to help manage <strong>${homeName}</strong> on Evergreen.</p>` +
+      `<p><a href="${link}">Click here to set your password</a> and activate your account. ` +
+      'This link expires in 1 hour and can only be used once.</p>' +
+      "<p>If you weren't expecting this invite, you can safely ignore this email.</p>"
     );
   }
 }
