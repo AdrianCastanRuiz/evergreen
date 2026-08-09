@@ -11,7 +11,9 @@ export interface PendingUserResponse {
   email: string;
   role: Role;
   isActive: boolean;
-  homeId: string;
+  // null for super_admin (Story 1.4) — the role has no home scope at all,
+  // unlike admin/staff which always get a real HomeMembership-backed value.
+  homeId: string | null;
 }
 
 @Injectable()
@@ -69,6 +71,33 @@ export class UsersService {
       .catch(() => {});
 
     return { ...user, homeId };
+  }
+
+  // Story 1.4: super_admin creates another super_admin. Unlike
+  // createPendingHomeAdmin, this role has no home scope at all — no
+  // HomeMembership row is ever created for it (the schema has no `home_id`
+  // on `User`; home scoping only exists via HomeMembership, which this role
+  // never gets a row in). That also means no @BypassTenantScope() is needed
+  // on the controller route: nothing here touches a tenant-scoped model.
+  async createSuperAdmin(email: string): Promise<PendingUserResponse> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const role: Role = 'super_admin';
+
+    const user = await this.createUser(normalizedEmail, role);
+
+    let rawToken: string;
+    try {
+      rawToken = await this.passwordResetService.issueActivationToken(user.id);
+    } catch (error) {
+      await this.rollbackPendingUser(user.id, error);
+      throw error;
+    }
+
+    this.mailService
+      .sendSuperAdminInviteEmail(normalizedEmail, rawToken)
+      .catch(() => {});
+
+    return { ...user, homeId: null };
   }
 
   // HomeMembership cascades on User delete (schema's onDelete: Cascade), so

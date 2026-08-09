@@ -18,12 +18,22 @@ describe('UsersService', () => {
     };
   };
   let passwordResetService: { issueActivationToken: jest.Mock };
-  let mailService: { sendAccountInviteEmail: jest.Mock };
+  let mailService: {
+    sendAccountInviteEmail: jest.Mock;
+    sendSuperAdminInviteEmail: jest.Mock;
+  };
 
   const pendingUser = {
     id: 'user-1',
     email: 'admin@evergreen.test',
     role: 'admin' as const,
+    isActive: false,
+  };
+
+  const pendingSuperAdmin = {
+    id: 'user-2',
+    email: 'super@evergreen.test',
+    role: 'super_admin' as const,
     isActive: false,
   };
 
@@ -43,6 +53,7 @@ describe('UsersService', () => {
     passwordResetService = { issueActivationToken: jest.fn() };
     mailService = {
       sendAccountInviteEmail: jest.fn().mockResolvedValue(undefined),
+      sendSuperAdminInviteEmail: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -172,6 +183,71 @@ describe('UsersService', () => {
       ).rejects.toBe(membershipError);
 
       expect(Sentry.captureException).toHaveBeenCalledWith(deleteError);
+    });
+  });
+
+  describe('createSuperAdmin', () => {
+    it('creates a pending super_admin User with no HomeMembership, issues a token, and emails the invite', async () => {
+      prisma.client.user.create.mockResolvedValue(pendingSuperAdmin);
+      passwordResetService.issueActivationToken.mockResolvedValue('raw-token');
+
+      const result = await usersService.createSuperAdmin(
+        '  Super@Evergreen.test  ',
+      );
+
+      expect(prisma.client.user.create).toHaveBeenCalledWith({
+        data: {
+          email: 'super@evergreen.test',
+          role: 'super_admin',
+          isActive: false,
+        },
+        select: { id: true, email: true, role: true, isActive: true },
+      });
+      expect(prisma.client.homeMembership.create).not.toHaveBeenCalled();
+      expect(passwordResetService.issueActivationToken).toHaveBeenCalledWith(
+        'user-2',
+      );
+      expect(mailService.sendSuperAdminInviteEmail).toHaveBeenCalledWith(
+        'super@evergreen.test',
+        'raw-token',
+      );
+      expect(result).toEqual({ ...pendingSuperAdmin, homeId: null });
+    });
+
+    it('does not leak passwordHash — response only contains the selected fields', async () => {
+      prisma.client.user.create.mockResolvedValue(pendingSuperAdmin);
+      passwordResetService.issueActivationToken.mockResolvedValue('raw-token');
+
+      const result = await usersService.createSuperAdmin(
+        'super@evergreen.test',
+      );
+
+      expect(result).not.toHaveProperty('passwordHash');
+    });
+
+    it('rejects a duplicate email with ConflictException instead of a raw 500, and never issues a token', async () => {
+      prisma.client.user.create.mockRejectedValue(uniqueViolation);
+
+      await expect(
+        usersService.createSuperAdmin('super@evergreen.test'),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(passwordResetService.issueActivationToken).not.toHaveBeenCalled();
+      expect(mailService.sendSuperAdminInviteEmail).not.toHaveBeenCalled();
+    });
+
+    it('rolls back the orphaned pending User when token issuance fails', async () => {
+      prisma.client.user.create.mockResolvedValue(pendingSuperAdmin);
+      const tokenError = new Error('token insert failed');
+      passwordResetService.issueActivationToken.mockRejectedValue(tokenError);
+
+      await expect(
+        usersService.createSuperAdmin('super@evergreen.test'),
+      ).rejects.toBe(tokenError);
+
+      expect(prisma.client.user.delete).toHaveBeenCalledWith({
+        where: { id: 'user-2' },
+      });
+      expect(mailService.sendSuperAdminInviteEmail).not.toHaveBeenCalled();
     });
   });
 });
