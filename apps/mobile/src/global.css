@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Evergreen design tokens (DESIGN.md). Values are referenced by
+       tailwind.config.js; the font tokens are exposed for typography.hero. */
+    --font-hero-family: Roboto;
+    --font-heading-family: Oswald;
+    --font-body-family: "Open Sans";
+  }
+}
