@@ -146,6 +146,56 @@ describe('Homes — invite admin (e2e)', () => {
     expect(resetToken?.expiresAt.getTime()).toBeGreaterThan(Date.now());
   });
 
+  // Code-review finding: class-validator's @IsEmail() rejects leading/
+  // trailing whitespace outright, which would 400 before HomesService's own
+  // .trim() ever ran. InviteHomeAdminDto now trims via @Transform before
+  // validation (same fix already applied to CreateSuperAdminDto in Story
+  // 1.4) — this is the real HTTP-path proof that fix works, since a unit
+  // test calling the service directly bypasses the DTO entirely.
+  it('accepts a whitespace-padded email (trimmed by the DTO before validation)', async () => {
+    const passwordService = app.get(PasswordService);
+    const passwordHash = await passwordService.hash('E2E-test-pass-123');
+
+    const superAdmin = await tenantContext.run(
+      { userId: null, role: 'super_admin', homeId: null, bypass: true },
+      async () =>
+        await prisma.client.user.create({
+          data: {
+            email: `super-admin-${Date.now()}@e2e.evergreen.test`,
+            passwordHash,
+            role: 'super_admin',
+            isActive: true,
+          },
+        }),
+    );
+    seededUserIds.push(superAdmin.id);
+
+    const loginRes = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: superAdmin.email, password: 'E2E-test-pass-123' })
+      .expect(200);
+    const accessToken = (loginRes.body as { accessToken: string }).accessToken;
+
+    const homeRes = await request(app.getHttpServer())
+      .post('/homes')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ name: `E2E Home ${Date.now()}`, timezone: 'Europe/Madrid' })
+      .expect(201);
+    const homeId = (homeRes.body as { id: string }).id;
+    seededHomeIds.push(homeId);
+
+    const rawEmail = `padded-admin-${Date.now()}@e2e.evergreen.test`;
+    const inviteRes = await request(app.getHttpServer())
+      .post(`/homes/${homeId}/admins`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ email: `  ${rawEmail}  ` })
+      .expect(201);
+
+    const invitedUserId = (inviteRes.body as { id: string }).id;
+    seededUserIds.push(invitedUserId);
+    expect((inviteRes.body as { email: string }).email).toBe(rawEmail);
+  });
+
   // Code-review finding (Acceptance Auditor): the original manual E2E
   // transcript verified "no bearer token -> 401" (authentication) and
   // mislabeled it as covering AC #4, which is actually about authorization
