@@ -71,6 +71,21 @@ export class MailService {
     });
   }
 
+  // Story 1.4: platform-level super_admin invites — no home to name, so this
+  // is a genuinely separate method/copy from sendAccountInviteEmail rather
+  // than an optional `homeName` on that one (mirrors why buildResetHtml and
+  // buildInviteHtml are already two separate methods, not one flexible one).
+  sendSuperAdminInviteEmail(email: string, rawToken: string): Promise<void> {
+    const link = this.buildLink(rawToken);
+    return this.attemptSend({
+      email,
+      subject: "You've been invited to Evergreen",
+      html: this.buildSuperAdminInviteHtml(link),
+      logLabel: 'super admin invite email',
+      retryCount: 0,
+    });
+  }
+
   private buildLink(rawToken: string): string {
     const link = new URL(this.resetPasswordUrl);
     link.searchParams.set('token', rawToken);
@@ -148,6 +163,15 @@ export class MailService {
   private buildInviteHtml(link: string, homeName: string): string {
     return (
       `<p>You've been invited to help manage <strong>${this.escapeHtml(homeName)}</strong> on Evergreen.</p>` +
+      `<p><a href="${link}">Click here to set your password</a> and activate your account. ` +
+      'This link expires in 1 hour and can only be used once.</p>' +
+      "<p>If you weren't expecting this invite, you can safely ignore this email.</p>"
+    );
+  }
+
+  private buildSuperAdminInviteHtml(link: string): string {
+    return (
+      "<p>You've been invited to become a super admin on Evergreen, with platform-wide access.</p>" +
       `<p><a href="${link}">Click here to set your password</a> and activate your account. ` +
       'This link expires in 1 hour and can only be used once.</p>' +
       "<p>If you weren't expecting this invite, you can safely ignore this email.</p>"
