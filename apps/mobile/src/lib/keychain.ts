@@ -12,11 +12,18 @@ export interface TokenPair {
   refreshToken: string;
 }
 
+// Sequential writes, not Promise.all: a real token pair must never be
+// half-written. If the refresh-token write fails after the access token was
+// written, both are deleted so the keychain holds either a full pair or
+// nothing — never a dangling access token with a stale/missing refresh token.
 export async function saveTokens(pair: TokenPair): Promise<void> {
-  await Promise.all([
-    SecureStore.setItemAsync(ACCESS_TOKEN_KEY, pair.accessToken),
-    SecureStore.setItemAsync(REFRESH_TOKEN_KEY, pair.refreshToken),
-  ]);
+  await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, pair.accessToken);
+  try {
+    await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, pair.refreshToken);
+  } catch (err) {
+    await clearTokens().catch(() => {});
+    throw err;
+  }
 }
 
 export async function loadTokens(): Promise<TokenPair | null> {
