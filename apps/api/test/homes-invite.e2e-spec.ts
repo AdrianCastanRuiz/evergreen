@@ -252,4 +252,50 @@ describe('Homes — invite admin (e2e)', () => {
       .send({ email: `blocked-${Date.now()}@e2e.evergreen.test` })
       .expect(403);
   });
+
+  // deferred-work.md: a non-UUID :id used to reach an unguarded Postgres
+  // cast (findUnique({ where: { id } })) and surface a raw 500 instead of a
+  // clean client error. ParseUUIDPipe on the :id param now rejects it at
+  // the routing layer, before any Prisma call.
+  it('rejects a non-UUID :id with 400 instead of a raw 500', async () => {
+    const passwordService = app.get(PasswordService);
+    const passwordHash = await passwordService.hash('E2E-test-pass-123');
+
+    const superAdmin = await tenantContext.run(
+      { userId: null, role: 'super_admin', homeId: null, bypass: true },
+      async () =>
+        await prisma.client.user.create({
+          data: {
+            email: `super-admin-${Date.now()}@e2e.evergreen.test`,
+            passwordHash,
+            role: 'super_admin',
+            isActive: true,
+          },
+        }),
+    );
+    seededUserIds.push(superAdmin.id);
+
+    const loginRes = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: superAdmin.email, password: 'E2E-test-pass-123' })
+      .expect(200);
+    const accessToken = (loginRes.body as { accessToken: string }).accessToken;
+
+    await request(app.getHttpServer())
+      .get('/homes/not-a-uuid')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .patch('/homes/not-a-uuid')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ address: 'New address' })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post('/homes/not-a-uuid/admins')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ email: `blocked-${Date.now()}@e2e.evergreen.test` })
+      .expect(400);
+  });
 });

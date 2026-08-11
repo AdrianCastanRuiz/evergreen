@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
 } from '@nestjs/common';
@@ -39,12 +40,15 @@ export class HomesController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string): Promise<Home> {
+  findOne(@Param('id', ParseUUIDPipe) id: string): Promise<Home> {
     return this.homesService.findOne(id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateHomeDto): Promise<Home> {
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateHomeDto,
+  ): Promise<Home> {
     return this.homesService.update(id, dto);
   }
 
@@ -59,7 +63,7 @@ export class HomesController {
   @Post(':id/admins')
   @HttpCode(HttpStatus.CREATED)
   async inviteAdmin(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: InviteHomeAdminDto,
   ): Promise<PendingUserResponse> {
     const home = await this.homesService.findOne(id);
