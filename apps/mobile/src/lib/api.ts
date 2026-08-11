@@ -58,6 +58,13 @@ export interface RequestOptions {
   signal?: AbortSignal;
 }
 
+// Every request gets a bounded timeout. Without one, a hung connection (dead
+// API process, firewall silently dropping SYN, flaky Wi-Fi) would leave the
+// caller awaiting forever — which stranded the splash in "resolving" forever
+// on the device. A timeout is a connectivity failure, surfaced as NetworkError
+// so callers show the inline connection error (Story 1.6 AC).
+const REQUEST_TIMEOUT_MS = 15_000;
+
 /**
  * Minimal fetch wrapper. Typed by @evergreen/shared-types request/response
  * types (AD-2). Normalizes non-2xx into ApiError and transport failures into
@@ -70,6 +77,21 @@ export async function request<T>(
 ): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
 
+  // Timeout + optional caller signal: whichever fires first aborts the fetch.
+  // A caller-provided signal (user cancel) must keep propagating as an
+  // AbortError; the internal timeout becomes a NetworkError (timeout = a
+  // connectivity problem for the caller's error mapping).
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+
   let response: Response;
   try {
     response = await fetch(url, {
@@ -80,12 +102,18 @@ export async function request<T>(
         ...headers,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal,
+      signal: controller.signal,
     });
   } catch (err) {
-    // AbortError (timeout/user cancel) is not a connectivity problem.
+    // The internal timeout fired — a real connectivity failure, not a user
+    // cancel, so surface it as NetworkError (inline connection error).
+    if (timedOut) throw new NetworkError("Request timed out");
+    // AbortError from the caller's own signal (user cancel) is not a
+    // connectivity problem.
     if (err instanceof Error && err.name === "AbortError") throw err;
     throw new NetworkError();
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!response.ok) {
