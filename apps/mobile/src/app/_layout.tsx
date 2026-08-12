@@ -46,6 +46,14 @@ function RootNavigator() {
       </Stack.Protected>
       <Stack.Protected guard={status === "unauthenticated"}>
         <Stack.Screen name="login" />
+        <Stack.Screen name="request-password-reset" />
+      </Stack.Protected>
+      {/* reset-password must stay reachable while "resolving" so a cold-start
+          deep link from the emailed reset URL lands here before /auth/me
+          settles — but never while a session is active. Declared after login
+          so the unauthenticated anchor stays login. */}
+      <Stack.Protected guard={status !== "authenticated"}>
+        <Stack.Screen name="reset-password" />
       </Stack.Protected>
     </Stack>
   );

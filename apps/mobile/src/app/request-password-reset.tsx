@@ -1,5 +1,5 @@
 import * as React from "react";
-import { router, useLocalSearchParams } from "expo-router";
+import { router } from "expo-router";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -11,36 +11,37 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
-import { ApiError, NetworkError } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
+import { ApiError, NetworkError, request } from "@/lib/api";
 
-// Login screen (FR2). The greeting uses the hero typography token per
-// DESIGN.md ({typography.hero} — Roboto 600/34px). Errors are inline and
-// scoped: invalid credentials (401), rate limit (429 — human message, never
-// auto-retry), and network loss (inputs preserved for a retry without
-// re-typing). No token is issued on any failure.
-export default function LoginScreen() {
-  const { signIn } = useAuth();
-  const { reset } = useLocalSearchParams<{ reset?: string }>();
+// Request-reset screen (FR3/NFR9): email → POST /auth/password-reset. The
+// endpoint is fire-and-forget and answers 204 whether or not the email is
+// registered, so the success copy stays generic and never reveals account
+// existence (no enumeration oracle). On success we show a confirmation and
+// point back to login.
+export default function RequestPasswordResetScreen() {
   const [email, setEmail] = React.useState("");
-  const [password, setPassword] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
+  const [submitted, setSubmitted] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   const handleSubmit = async () => {
     if (submitting) return;
+    if (!email.trim()) {
+      setError("Enter your email to receive a reset link.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      await signIn(email, password);
+      await request<undefined>("/auth/password-reset", {
+        method: "POST",
+        body: { email: email.trim() },
+      });
+      setSubmitted(true);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 429) {
-          setError(
-            "Too many attempts. Please wait a minute and try again.",
-          );
-        } else if (err.status === 401) {
-          setError("Invalid email or password");
+          setError("Too many attempts. Please wait a minute and try again.");
         } else {
           setError("Something went wrong. Please try again.");
         }
@@ -54,6 +55,36 @@ export default function LoginScreen() {
     }
   };
 
+  if (submitted) {
+    return (
+      <KeyboardAvoidingView
+        className="flex-1 bg-background"
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          contentContainerClassName="flex-1 justify-center px-gutter py-8"
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text className="font-hero text-[28px] font-semibold leading-[34px] tracking-[-0.01em] text-foreground">
+            Check your email
+          </Text>
+          <Text className="mt-2 text-muted-foreground">
+            If an account is registered for that email, {"you'll"} receive a link
+            to set a new password. It expires in 1 hour and can only be used
+            once.
+          </Text>
+          <Button
+            className="mt-8"
+            size="lg"
+            onPress={() => router.replace("/login")}
+          >
+            <Text>Back to sign in</Text>
+          </Button>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-background"
@@ -63,11 +94,12 @@ export default function LoginScreen() {
         contentContainerClassName="flex-1 justify-center px-gutter py-8"
         keyboardShouldPersistTaps="handled"
       >
-        <Text className="font-hero text-[34px] font-semibold leading-[39px] tracking-[-0.01em] text-foreground">
-          Welcome to Evergreen
+        <Text className="font-hero text-[28px] font-semibold leading-[34px] tracking-[-0.01em] text-foreground">
+          Reset your password
         </Text>
         <Text className="mt-2 text-muted-foreground">
-          Sign in to see your care home updates.
+          Enter the email you signed up with and {"we'll"} send you a link to set a
+          new password.
         </Text>
 
         <RNText className="mt-8 text-sm font-body font-medium text-foreground">
@@ -85,25 +117,6 @@ export default function LoginScreen() {
           editable={!submitting}
         />
 
-        <RNText className="mt-4 text-sm font-body font-medium text-foreground">
-          Password
-        </RNText>
-        <Input
-          className="mt-2"
-          value={password}
-          onChangeText={setPassword}
-          placeholder="Your password"
-          secureTextEntry
-          autoComplete="password"
-          editable={!submitting}
-        />
-
-        {reset === "success" ? (
-          <Text className="mt-4 text-foreground">
-            Your password has been updated. Sign in with your new password.
-          </Text>
-        ) : null}
-
         {error ? (
           <Text className="mt-4 text-destructive">{error}</Text>
         ) : null}
@@ -117,17 +130,16 @@ export default function LoginScreen() {
           {submitting ? (
             <ActivityIndicator className="text-primary-foreground" />
           ) : (
-            <Text>Sign in</Text>
+            <Text>Send reset link</Text>
           )}
         </Button>
 
         <Button
           className="mt-4"
           variant="outline"
-          disabled={submitting}
-          onPress={() => router.push("/request-password-reset")}
+          onPress={() => router.replace("/login")}
         >
-          <Text>Forgot your password?</Text>
+          <Text>Back to sign in</Text>
         </Button>
       </ScrollView>
     </KeyboardAvoidingView>
