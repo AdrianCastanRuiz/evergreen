@@ -1,0 +1,822 @@
+diff --git a/apps/mobile/.env.example b/apps/mobile/.env.example
+new file mode 100644
+index 0000000..689c13d
+--- /dev/null
++++ b/apps/mobile/.env.example
+@@ -0,0 +1,8 @@
++# Mobile app environment (Expo public vars are inlined at build time).
++# Copy to .env and fill in. Never commit .env.
++
++# Backend base URL. Defaults to http://localhost:3000 when unset.
++EXPO_PUBLIC_API_URL=http://localhost:3000
++
++# Sentry DSN (AD-15). Leave empty to disable Sentry in dev builds.
++SENTRY_DSN=
+diff --git a/apps/mobile/.gitignore b/apps/mobile/.gitignore
+new file mode 100644
+index 0000000..4b00baf
+--- /dev/null
++++ b/apps/mobile/.gitignore
+@@ -0,0 +1,43 @@
++# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
++
++# dependencies
++node_modules/
++
++# Expo
++.expo/
++dist/
++web-build/
++expo-env.d.ts
++
++# Native
++.kotlin/
++*.orig.*
++*.jks
++*.p8
++*.p12
++*.key
++*.mobileprovision
++
++# Metro
++.metro-health-check*
++
++# debug
++npm-debug.*
++yarn-debug.*
++yarn-error.*
++
++# macOS
++.DS_Store
++*.pem
++
++# local env files
++.env*.local
++
++# typescript
++*.tsbuildinfo
++
++example
++
++# generated native folders
++/ios
++/android
+diff --git a/apps/mobile/README.md b/apps/mobile/README.md
+new file mode 100644
+index 0000000..7a5cc0e
+--- /dev/null
++++ b/apps/mobile/README.md
+@@ -0,0 +1,9 @@
++# @evergreen/mobile
++
++Expo React Native app (family/staff) for Evergreen. Expo SDK 57, expo-router, NativeWind 4 + React Native Reusables, TanStack Query with AsyncStorage persister (AD-16), tokens in platform keychain via expo-secure-store (AD-8).
++
++```bash
++pnpm --filter @evergreen/mobile run dev
++```
++
++See `_bmad-output/implementation-artifacts/spec-16-mobile-scaffold-expo.md` for the scaffold spec.
+diff --git a/apps/mobile/app.json b/apps/mobile/app.json
+new file mode 100644
+index 0000000..aed582c
+--- /dev/null
++++ b/apps/mobile/app.json
+@@ -0,0 +1,43 @@
++{
++  "expo": {
++    "name": "Evergreen",
++    "slug": "evergreen",
++    "version": "0.0.1",
++    "orientation": "portrait",
++    "icon": "./assets/images/icon.png",
++    "scheme": "evergreen",
++    "userInterfaceStyle": "light",
++    "ios": {
++      "icon": "./assets/expo.icon"
++    },
++    "android": {
++      "adaptiveIcon": {
++        "backgroundColor": "#1B853F",
++        "foregroundImage": "./assets/images/android-icon-foreground.png",
++        "backgroundImage": "./assets/images/android-icon-background.png",
++        "monochromeImage": "./assets/images/android-icon-monochrome.png"
++      },
++      "predictiveBackGestureEnabled": false
++    },
++    "web": {
++      "bundler": "metro",
++      "output": "static",
++      "favicon": "./assets/images/favicon.png"
++    },
++    "plugins": [
++      "expo-router",
++      [
++        "expo-splash-screen",
++        {
++          "backgroundColor": "#1B853F",
++          "image": "./assets/images/splash-icon.png",
++          "imageWidth": 76
++        }
++      ]
++    ],
++    "experiments": {
++      "typedRoutes": true,
++      "reactCompiler": true
++    }
++  }
++}
+diff --git a/apps/mobile/babel.config.js b/apps/mobile/babel.config.js
+new file mode 100644
+index 0000000..f3c649b
+--- /dev/null
++++ b/apps/mobile/babel.config.js
+@@ -0,0 +1,9 @@
++module.exports = function (api) {
++  api.cache(true);
++  return {
++    presets: [
++      ["babel-preset-expo", { jsxImportSource: "nativewind" }],
++      "nativewind/babel",
++    ],
++  };
++};
+diff --git a/apps/mobile/eslint.config.js b/apps/mobile/eslint.config.js
+new file mode 100644
+index 0000000..ba708ed
+--- /dev/null
++++ b/apps/mobile/eslint.config.js
+@@ -0,0 +1,10 @@
++// https://docs.expo.dev/guides/using-eslint/
++const { defineConfig } = require('eslint/config');
++const expoConfig = require("eslint-config-expo/flat");
++
++module.exports = defineConfig([
++  expoConfig,
++  {
++    ignores: ["dist/*"],
++  }
++]);
+diff --git a/apps/mobile/metro.config.js b/apps/mobile/metro.config.js
+new file mode 100644
+index 0000000..bd6cb25
+--- /dev/null
++++ b/apps/mobile/metro.config.js
+@@ -0,0 +1,16 @@
++const { getDefaultConfig } = require("expo/metro-config");
++const { withNativeWind } = require("nativewind/metro");
++const path = require("path");
++
++const config = getDefaultConfig(__dirname);
++
++// Resolve the plain-TS @evergreen/shared-types workspace package (AD-2): the
++// workspace hoists it under the repo root, so Metro must watch both trees.
++const workspaceRoot = path.resolve(__dirname, "../..");
++config.watchFolders = [workspaceRoot];
++config.resolver.nodeModulesPaths = [
++  path.resolve(workspaceRoot, "node_modules"),
++  path.resolve(__dirname, "node_modules"),
++];
++
++module.exports = withNativeWind(config, { input: "./src/global.css" });
+diff --git a/apps/mobile/nativewind-env.d.ts b/apps/mobile/nativewind-env.d.ts
+new file mode 100644
+index 0000000..3778e2e
+--- /dev/null
++++ b/apps/mobile/nativewind-env.d.ts
+@@ -0,0 +1,3 @@
++/// <reference types="nativewind/types" />
++
++declare module "*.css";
+diff --git a/apps/mobile/package.json b/apps/mobile/package.json
+index fc721e9..fd9662f 100644
+--- a/apps/mobile/package.json
++++ b/apps/mobile/package.json
+@@ -1,12 +1,55 @@
+ {
+   "name": "@evergreen/mobile",
++  "main": "expo-router/entry",
+   "version": "0.0.1",
+   "private": true,
+-  "description": "Expo React Native family/staff app. Scaffolded in a later phase.",
+   "scripts": {
+-    "dev": "echo \"apps/mobile not implemented yet\" && exit 0",
+-    "build": "echo \"apps/mobile not implemented yet\" && exit 0",
+-    "test": "echo \"apps/mobile not implemented yet\" && exit 0",
+-    "lint": "echo \"apps/mobile not implemented yet\" && exit 0"
++    "dev": "expo start",
++    "build": "expo export",
++    "start": "expo start",
++    "android": "expo start --android",
++    "ios": "expo start --ios",
++    "web": "expo start --web",
++    "test": "expo lint",
++    "lint": "expo lint",
++    "typecheck": "tsc --noEmit"
++  },
++  "dependencies": {
++    "@evergreen/shared-types": "workspace:*",
++    "@react-native-async-storage/async-storage": "^3.1.1",
++    "@sentry/react-native": "^8.22.0",
++    "@tanstack/query-async-storage-persister": "^5.101.4",
++    "@tanstack/react-query": "^5.101.4",
++    "@tanstack/react-query-persist-client": "^5.101.4",
++    "class-variance-authority": "^0.7.1",
++    "clsx": "^2.1.1",
++    "expo": "~57.0.12",
++    "expo-constants": "~57.0.10",
++    "expo-font": "~57.0.1",
++    "expo-linking": "~57.0.5",
++    "expo-router": "~57.0.12",
++    "expo-secure-store": "~57.0.1",
++    "expo-splash-screen": "~57.0.6",
++    "expo-status-bar": "~57.0.1",
++    "nativewind": "^4.2.6",
++    "react": "19.2.3",
++    "react-dom": "19.2.3",
++    "react-native": "0.86.2",
++    "react-native-css-interop": "^0.2.6",
++    "react-native-gesture-handler": "~2.32.0",
++    "react-native-reanimated": "4.5.1",
++    "react-native-safe-area-context": "~5.7.0",
++    "react-native-screens": "~4.26.0",
++    "react-native-web": "~0.21.0",
++    "tailwind-merge": "^3.6.0"
++  },
++  "devDependencies": {
++    "@types/react": "~19.2.2",
++    "babel-preset-expo": "~57.0.6",
++    "eslint": "^9.39.5",
++    "eslint-config-expo": "~57.0.1",
++    "prettier-plugin-tailwindcss": "^0.5.11",
++    "tailwindcss": "^3.4.17",
++    "typescript": "~6.0.3"
+   }
+ }
+diff --git a/apps/mobile/src/app/_layout.tsx b/apps/mobile/src/app/_layout.tsx
+new file mode 100644
+index 0000000..b9e2bbe
+--- /dev/null
++++ b/apps/mobile/src/app/_layout.tsx
+@@ -0,0 +1,33 @@
++import "../global.css";
++
++import * as Sentry from "@sentry/react-native";
++import { Stack } from "expo-router";
++import { StatusBar } from "expo-status-bar";
++import { GestureHandlerRootView } from "react-native-gesture-handler";
++import { SafeAreaProvider } from "react-native-safe-area-context";
++
++import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
++
++import { queryClient, queryPersister } from "@/lib/query-client";
++
++if (process.env.SENTRY_DSN) {
++  Sentry.init({ dsn: process.env.SENTRY_DSN, enabled: true });
++}
++
++export default function RootLayout() {
++  return (
++    <GestureHandlerRootView style={{ flex: 1 }}>
++      <SafeAreaProvider>
++        <PersistQueryClientProvider
++          client={queryClient}
++          persistOptions={{ persister: queryPersister }}
++        >
++          <Stack screenOptions={{ headerShown: false }}>
++            <Stack.Screen name="index" />
++          </Stack>
++          <StatusBar style="auto" />
++        </PersistQueryClientProvider>
++      </SafeAreaProvider>
++    </GestureHandlerRootView>
++  );
++}
+diff --git a/apps/mobile/src/app/index.tsx b/apps/mobile/src/app/index.tsx
+new file mode 100644
+index 0000000..78f7434
+--- /dev/null
++++ b/apps/mobile/src/app/index.tsx
+@@ -0,0 +1,14 @@
++import { Text, View } from "react-native";
++
++// Placeholder root screen. Story 1.6 replaces this with the splash →
++// auth-resolution flow; this screen exists so the navigation tree is valid
++// before any auth screens land.
++export default function IndexScreen() {
++  return (
++    <View className="flex-1 items-center justify-center bg-background">
++      <Text className="font-hero text-[34px] font-semibold leading-[39px] tracking-[-0.01em] text-foreground">
++        Evergreen
++      </Text>
++    </View>
++  );
++}
+diff --git a/apps/mobile/src/components/ui/button.tsx b/apps/mobile/src/components/ui/button.tsx
+new file mode 100644
+index 0000000..5182324
+--- /dev/null
++++ b/apps/mobile/src/components/ui/button.tsx
+@@ -0,0 +1,79 @@
++import { cn } from "@/lib/utils";
++import { cva, type VariantProps } from "class-variance-authority";
++import * as React from "react";
++import { Pressable, type View } from "react-native";
++import { TextClassContext } from "@/components/ui/text";
++
++const buttonVariants = cva(
++  "group flex items-center justify-center rounded-sm border-2 border-transparent px-4 py-2 web:focus-visible:outline-none",
++  {
++    variants: {
++      variant: {
++        default: "bg-primary active:bg-primary-hover",
++        secondary: "bg-secondary active:bg-secondary",
++        outline: "border-primary bg-transparent active:bg-muted",
++      },
++      size: {
++        default: "h-11 px-4 py-2",
++        sm: "h-9 px-3",
++        lg: "h-12 px-8",
++      },
++    },
++    defaultVariants: {
++      variant: "default",
++      size: "default",
++    },
++  },
++);
++
++const buttonTextVariants = cva(
++  "web:whitespace-nowrap text-sm font-body font-medium text-primary-foreground",
++  {
++    variants: {
++      variant: {
++        default: "text-primary-foreground",
++        secondary: "text-secondary-foreground",
++        outline: "text-primary",
++      },
++      size: {
++        default: "",
++        sm: "text-sm",
++        lg: "text-base",
++      },
++    },
++    defaultVariants: {
++      variant: "default",
++      size: "default",
++    },
++  },
++);
++
++type ButtonProps = React.ComponentPropsWithoutRef<typeof Pressable> &
++  VariantProps<typeof buttonVariants> & {
++    children: React.ReactNode;
++  };
++
++const Button = React.forwardRef<View, ButtonProps>(
++  ({ className, variant, size, children, disabled, ...props }, ref) => {
++    return (
++      <TextClassContext.Provider
++        value={buttonTextVariants({ variant, size, className })}
++      >
++        <Pressable
++          ref={ref}
++          className={cn(
++            buttonVariants({ variant, size, className }),
++            disabled && "opacity-50",
++          )}
++          disabled={disabled}
++          {...props}
++        >
++          {children}
++        </Pressable>
++      </TextClassContext.Provider>
++    );
++  },
++);
++Button.displayName = "Button";
++
++export { Button, buttonTextVariants, buttonVariants };
+diff --git a/apps/mobile/src/components/ui/card.tsx b/apps/mobile/src/components/ui/card.tsx
+new file mode 100644
+index 0000000..0f9baa4
+--- /dev/null
++++ b/apps/mobile/src/components/ui/card.tsx
+@@ -0,0 +1,31 @@
++import type { ComponentPropsWithoutRef, ReactNode } from "react";
++import * as React from "react";
++import { View } from "react-native";
++
++import { cn } from "@/lib/utils";
++
++const Card = React.forwardRef<
++  React.ComponentRef<typeof View>,
++  ComponentPropsWithoutRef<typeof View> & {
++    header?: ReactNode;
++    footer?: ReactNode;
++  }
++>(({ className, header, footer, children, ...props }, ref) => {
++  return (
++    <View
++      ref={ref}
++      className={cn(
++        "rounded-md border border-border bg-card p-4",
++        className,
++      )}
++      {...props}
++    >
++      {header ? <View className="mb-3">{header}</View> : null}
++      {children}
++      {footer ? <View className="mt-3">{footer}</View> : null}
++    </View>
++  );
++});
++Card.displayName = "Card";
++
++export { Card };
+diff --git a/apps/mobile/src/components/ui/input.tsx b/apps/mobile/src/components/ui/input.tsx
+new file mode 100644
+index 0000000..7c7a49f
+--- /dev/null
++++ b/apps/mobile/src/components/ui/input.tsx
+@@ -0,0 +1,24 @@
++import * as React from "react";
++import { TextInput as RNTextInput } from "react-native";
++
++import { cn } from "@/lib/utils";
++
++const Input = React.forwardRef<
++  React.ComponentRef<typeof RNTextInput>,
++  React.ComponentPropsWithoutRef<typeof RNTextInput>
++>(({ className, placeholderClassName, ...props }, ref) => {
++  return (
++    <RNTextInput
++      ref={ref}
++      className={cn(
++        "h-11 rounded-lg border-2 border-input bg-card px-3 text-base text-foreground placeholder:text-muted-foreground web:focus-visible:outline-none",
++        className,
++      )}
++      placeholderTextColor="#5C5C5C"
++      {...props}
++    />
++  );
++});
++Input.displayName = "Input";
++
++export { Input };
+diff --git a/apps/mobile/src/components/ui/text.tsx b/apps/mobile/src/components/ui/text.tsx
+new file mode 100644
+index 0000000..ec6c015
+--- /dev/null
++++ b/apps/mobile/src/components/ui/text.tsx
+@@ -0,0 +1,23 @@
++import * as React from "react";
++import { Text as RNText } from "react-native";
++
++import { cn } from "@/lib/utils";
++
++export const TextClassContext = React.createContext<string | undefined>(undefined);
++
++const Text = React.forwardRef<
++  React.ComponentRef<typeof RNText>,
++  React.ComponentPropsWithoutRef<typeof RNText>
++>(({ className, ...props }, ref) => {
++  const textClass = React.useContext(TextClassContext);
++  return (
++    <RNText
++      ref={ref}
++      className={cn("font-body text-base text-foreground", textClass, className)}
++      {...props}
++    />
++  );
++});
++Text.displayName = "Text";
++
++export { Text };
+diff --git a/apps/mobile/src/global.css b/apps/mobile/src/global.css
+new file mode 100644
+index 0000000..f5ce7cb
+--- /dev/null
++++ b/apps/mobile/src/global.css
+@@ -0,0 +1,13 @@
++@tailwind base;
++@tailwind components;
++@tailwind utilities;
++
++@layer base {
++  :root {
++    /* Evergreen design tokens (DESIGN.md). Values are referenced by
++       tailwind.config.js; the font tokens are exposed for typography.hero. */
++    --font-hero-family: Roboto;
++    --font-heading-family: Oswald;
++    --font-body-family: "Open Sans";
++  }
++}
+diff --git a/apps/mobile/src/lib/api.ts b/apps/mobile/src/lib/api.ts
+new file mode 100644
+index 0000000..e06c491
+--- /dev/null
++++ b/apps/mobile/src/lib/api.ts
+@@ -0,0 +1,93 @@
++import type { ApiErrorBody } from "@evergreen/shared-types";
++
++export const API_BASE_URL =
++  process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
++
++/**
++ * Typed client error raised for any non-2xx HTTP response. `code`/`message`
++ * come from the API's `{ error: { code, message, details? } }` envelope
++ * (Consistency Conventions in ARCHITECTURE-SPINE.md); `status` is the raw
++ * HTTP status so callers can branch on 429/401 without string-matching.
++ */
++export class ApiError extends Error {
++  readonly code: string;
++  readonly status: number;
++  readonly details?: unknown;
++
++  constructor(status: number, code: string, message: string, details?: unknown) {
++    super(message);
++    this.name = "ApiError";
++    this.status = status;
++    this.code = code;
++    this.details = details;
++  }
++}
++
++/** Raised when the request fails before an HTTP response arrives (offline,
++ * timeout, DNS). Distinct from ApiError so screens can show a connection
++ * message without conflating it with a server error. */
++export class NetworkError extends Error {
++  constructor(message = "No network connection") {
++    super(message);
++    this.name = "NetworkError";
++  }
++}
++
++export interface RequestOptions {
++  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
++  body?: unknown;
++  token?: string | null;
++  headers?: Record<string, string>;
++  signal?: AbortSignal;
++}
++
++/**
++ * Minimal fetch wrapper. Typed by @evergreen/shared-types request/response
++ * types (AD-2). Normalizes non-2xx into ApiError and transport failures into
++ * NetworkError. Deliberately does NOT auto-retry on 429 — Stories 1.6/1.11
++ * decide retry policy at the call site (NFR10/AD-8).
++ */
++export async function request<T>(
++  path: string,
++  { method = "GET", body, token, headers, signal }: RequestOptions = {},
++): Promise<T> {
++  const url = `${API_BASE_URL}${path}`;
++
++  let response: Response;
++  try {
++    response = await fetch(url, {
++      method,
++      headers: {
++        "Content-Type": "application/json",
++        ...(token ? { Authorization: `Bearer ${token}` } : {}),
++        ...headers,
++      },
++      body: body === undefined ? undefined : JSON.stringify(body),
++      signal,
++    });
++  } catch (err) {
++    // AbortError (timeout/user cancel) is not a connectivity problem.
++    if (err instanceof Error && err.name === "AbortError") throw err;
++    throw new NetworkError();
++  }
++
++  if (!response.ok) {
++    let errorBody: ApiErrorBody | undefined;
++    try {
++      errorBody = (await response.json()) as ApiErrorBody;
++    } catch {
++      // Non-JSON error body — fall back to the status text.
++    }
++    throw new ApiError(
++      response.status,
++      errorBody?.error.code ?? "unknown_error",
++      errorBody?.error.message ?? response.statusText,
++      errorBody?.error.details,
++    );
++  }
++
++  // 204 No Content (e.g. POST /auth/logout, /auth/password-reset).
++  if (response.status === 204) return undefined as T;
++
++  return (await response.json()) as T;
++}
+diff --git a/apps/mobile/src/lib/keychain.ts b/apps/mobile/src/lib/keychain.ts
+new file mode 100644
+index 0000000..c9223c0
+--- /dev/null
++++ b/apps/mobile/src/lib/keychain.ts
+@@ -0,0 +1,36 @@
++import * as SecureStore from "expo-secure-store";
++
++// JWT access + refresh tokens live ONLY in the platform keychain (NFR8, AD-8).
++// This module is the sole owner of expo-secure-store in the app — no other
++// module may import it.
++
++const ACCESS_TOKEN_KEY = "evergreen.access_token";
++const REFRESH_TOKEN_KEY = "evergreen.refresh_token";
++
++export interface TokenPair {
++  accessToken: string;
++  refreshToken: string;
++}
++
++export async function saveTokens(pair: TokenPair): Promise<void> {
++  await Promise.all([
++    SecureStore.setItemAsync(ACCESS_TOKEN_KEY, pair.accessToken),
++    SecureStore.setItemAsync(REFRESH_TOKEN_KEY, pair.refreshToken),
++  ]);
++}
++
++export async function loadTokens(): Promise<TokenPair | null> {
++  const [accessToken, refreshToken] = await Promise.all([
++    SecureStore.getItemAsync(ACCESS_TOKEN_KEY),
++    SecureStore.getItemAsync(REFRESH_TOKEN_KEY),
++  ]);
++  if (!accessToken || !refreshToken) return null;
++  return { accessToken, refreshToken };
++}
++
++export async function clearTokens(): Promise<void> {
++  await Promise.all([
++    SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY),
++    SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY),
++  ]);
++}
+diff --git a/apps/mobile/src/lib/query-client.ts b/apps/mobile/src/lib/query-client.ts
+new file mode 100644
+index 0000000..2b40852
+--- /dev/null
++++ b/apps/mobile/src/lib/query-client.ts
+@@ -0,0 +1,21 @@
++import AsyncStorage from "@react-native-async-storage/async-storage";
++import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
++import { QueryClient } from "@tanstack/react-query";
++
++// TanStack Query data layer per AD-16: persisted AsyncStorage-backed cache so
++// a screen navigated to while online renders from cache when the network drops.
++
++export const queryClient = new QueryClient({
++  defaultOptions: {
++    queries: {
++      staleTime: 60_000,
++      gcTime: 1000 * 60 * 60 * 24, // keep cache for a day
++      retry: 1,
++    },
++  },
++});
++
++export const queryPersister = createAsyncStoragePersister({
++  storage: AsyncStorage,
++  key: "evergreen.query-cache",
++});
+diff --git a/apps/mobile/src/lib/utils.ts b/apps/mobile/src/lib/utils.ts
+new file mode 100644
+index 0000000..a5ef193
+--- /dev/null
++++ b/apps/mobile/src/lib/utils.ts
+@@ -0,0 +1,6 @@
++import { clsx, type ClassValue } from "clsx";
++import { twMerge } from "tailwind-merge";
++
++export function cn(...inputs: ClassValue[]) {
++  return twMerge(clsx(inputs));
++}
+diff --git a/apps/mobile/tailwind.config.js b/apps/mobile/tailwind.config.js
+new file mode 100644
+index 0000000..6eb0bf3
+--- /dev/null
++++ b/apps/mobile/tailwind.config.js
+@@ -0,0 +1,59 @@
++/** @type {import('tailwindcss').Config} */
++module.exports = {
++  // NOTE: Update this to include the paths to all files that contain Nativewind classes.
++  content: ["./src/**/*.{js,jsx,ts,tsx}"],
++  presets: [require("nativewind/preset")],
++  theme: {
++    extend: {
++      colors: {
++        primary: "#1B853F",
++        "primary-hover": "#19570D",
++        "primary-foreground": "#FFFFFF",
++        secondary: "#2C643F",
++        "secondary-foreground": "#FFFFFF",
++        accent: "#2E8C8F",
++        "accent-blue": "#3070A5",
++        "accent-blue-hover": "#3C7AD1",
++        "accent-blue-foreground": "#FFFFFF",
++        background: "#FFFFFF",
++        foreground: "#222222",
++        card: "#FFFFFF",
++        "card-foreground": "#222222",
++        muted: "#F8F8F8",
++        "muted-alt": "#F6F6F6",
++        "muted-foreground": "#5C5C5C",
++        border: "#8C8C8C",
++        "border-strong": "#6E6E6E",
++        input: "#8C8C8C",
++        ring: "#1B853F",
++        destructive: "#C23934",
++        "destructive-foreground": "#FFFFFF",
++      },
++      borderRadius: {
++        sm: "3px",
++        DEFAULT: "8px",
++        md: "11px",
++        lg: "16px",
++        full: "9999px",
++      },
++      spacing: {
++        gutter: "16px",
++        "margin-mobile": "16px",
++        "margin-desktop": "32px",
++        "section-gap": "32px",
++        "card-padding": "16px",
++      },
++      fontFamily: {
++        hero: ["Roboto", "sans-serif"],
++        heading: ["Oswald", "sans-serif"],
++        "heading-sm": ["Oswald", "sans-serif"],
++        "section-title": ["Raleway", "sans-serif"],
++        body: ["Open Sans", "sans-serif"],
++        "body-emphasis": ["Open Sans", "sans-serif"],
++        "button-label": ["Open Sans", "sans-serif"],
++        caption: ["Open Sans", "sans-serif"],
++      },
++    },
++  },
++  plugins: [],
++};
+diff --git a/apps/mobile/tsconfig.json b/apps/mobile/tsconfig.json
+new file mode 100644
+index 0000000..39ef5f0
+--- /dev/null
++++ b/apps/mobile/tsconfig.json
+@@ -0,0 +1,21 @@
++{
++  "extends": "expo/tsconfig.base",
++  "compilerOptions": {
++    "strict": true,
++    "paths": {
++      "@/*": [
++        "./src/*"
++      ],
++      "@/assets/*": [
++        "./assets/*"
++      ]
++    }
++  },
++  "include": [
++    "**/*.ts",
++    "**/*.tsx",
++    ".expo/types/**/*.ts",
++    "expo-env.d.ts",
++    "nativewind-env.d.ts"
++  ]
++}
+\ No newline at end of file
+diff --git a/packages/shared-types/src/auth.ts b/packages/shared-types/src/auth.ts
+index 3518b78..0374ddd 100644
+--- a/packages/shared-types/src/auth.ts
++++ b/packages/shared-types/src/auth.ts
+@@ -16,3 +16,31 @@ export interface AuthenticatedUser {
+   role: Role;
+   homeId: string | null;
+ }
++
++// GET /auth/me — used by the splash-screen auth-state resolution (FR8).
++export interface MeResponse {
++  id: string;
++  email: string;
++  name: string | null;
++  role: Role;
++  isActive: boolean;
++  homeId: string | null;
++}
++
++// POST /auth/refresh — mints a fresh token pair from the bearer refresh token.
++export interface RefreshRequest {
++  refreshToken: string;
++}
++
++// POST /auth/password-reset — 204 regardless of whether the email exists
++// (no account enumeration, NFR9/AD-8).
++export interface RequestPasswordResetRequest {
++  email: string;
++}
++
++// POST /auth/password-reset/confirm — returns { success: true }, never a
++// token pair; the client navigates to login after a successful confirm.
++export interface ConfirmPasswordResetRequest {
++  token: string;
++  newPassword: string;
++}

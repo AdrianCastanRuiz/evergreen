@@ -70,10 +70,21 @@ export class TenantContextMiddleware implements NestMiddleware {
     // there's nothing to auto-inject yet. The explicit userId+homeId filter
     // below does the actual scoping — this is not the controller-facing
     // @BypassTenantScope() escape hatch.
+    //
+    // The query is awaited *inside* the run() callback, not just returned —
+    // `.findFirst()` returns a lazy PrismaPromise, and AsyncLocalStorage's
+    // store is only active for async work actually spawned during the
+    // callback's own execution. Returning the unresolved promise and
+    // awaiting it outside `run()` lets the context exit before the
+    // tenant-scoping extension's `$allOperations` hook (which reads
+    // `tenantContext.getStore()`) ever runs the query, and it fails with
+    // "no home_id in request context" (reproduced in
+    // test/homes-invite.e2e-spec.ts while adding e2e coverage for
+    // Story 1.3's own use of this same run()-then-bypassed-read pattern).
     const membership = await this.tenantContext.run(
       { userId, role: 'family', homeId: null, bypass: true },
-      () =>
-        this.prisma.client.homeMembership.findFirst({
+      async () =>
+        await this.prisma.client.homeMembership.findFirst({
           where: { userId, homeId: activeHomeId },
           select: { homeId: true },
         }),
