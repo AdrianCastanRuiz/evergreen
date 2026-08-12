@@ -7,7 +7,7 @@ import { Text, View } from "react-native";
 export default function SplashScreen() {
   return (
     <View className="flex-1 items-center justify-center bg-background">
-      <Text className="font-hero text-[34px] font-semibold leading-[39px] tracking-[-0.01em] text-foreground">
+      <Text className="font-hero text-[34px] leading-[39px] tracking-[-0.01em] text-foreground">
         Evergreen
       </Text>
     </View>

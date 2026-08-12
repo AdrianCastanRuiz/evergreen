@@ -10,6 +10,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Text } from "@/components/ui/text";
 import { ApiError, NetworkError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -63,14 +64,14 @@ export default function LoginScreen() {
         contentContainerClassName="flex-1 justify-center px-gutter py-8"
         keyboardShouldPersistTaps="handled"
       >
-        <Text className="font-hero text-[34px] font-semibold leading-[39px] tracking-[-0.01em] text-foreground">
+        <Text className="font-hero text-[34px] leading-[39px] tracking-[-0.01em] text-foreground">
           Welcome to Evergreen
         </Text>
         <Text className="mt-2 text-muted-foreground">
           Sign in to see your care home updates.
         </Text>
 
-        <RNText className="mt-8 text-sm font-body font-medium text-foreground">
+        <RNText className="mt-8 text-sm font-body-medium text-foreground">
           Email
         </RNText>
         <Input
@@ -85,15 +86,14 @@ export default function LoginScreen() {
           editable={!submitting}
         />
 
-        <RNText className="mt-4 text-sm font-body font-medium text-foreground">
+        <RNText className="mt-4 text-sm font-body-medium text-foreground">
           Password
         </RNText>
-        <Input
+        <PasswordInput
           className="mt-2"
           value={password}
           onChangeText={setPassword}
           placeholder="Your password"
-          secureTextEntry
           autoComplete="password"
           editable={!submitting}
         />

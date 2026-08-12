@@ -44,14 +44,19 @@ module.exports = {
         "card-padding": "16px",
       },
       fontFamily: {
-        hero: ["Roboto", "sans-serif"],
-        heading: ["Oswald", "sans-serif"],
-        "heading-sm": ["Oswald", "sans-serif"],
-        "section-title": ["Raleway", "sans-serif"],
-        body: ["Open Sans", "sans-serif"],
-        "body-emphasis": ["Open Sans", "sans-serif"],
-        "button-label": ["Open Sans", "sans-serif"],
-        caption: ["Open Sans", "sans-serif"],
+        // Each token maps to an exact @expo-google-fonts variant (name embeds
+        // the weight). A fontFamily plus a separate fontWeight does NOT work
+        // on Android for custom fonts — the device looks for a font file of
+        // that exact family+weight and renders empty when it can't find it.
+        hero: ["Roboto_600SemiBold", "sans-serif"],
+        heading: ["Oswald_600SemiBold", "sans-serif"],
+        "heading-sm": ["Oswald_600SemiBold", "sans-serif"],
+        "section-title": ["Raleway_600SemiBold", "sans-serif"],
+        body: ["OpenSans_400Regular", "sans-serif"],
+        "body-emphasis": ["OpenSans_600SemiBold", "sans-serif"],
+        "body-medium": ["OpenSans_500Medium", "sans-serif"],
+        "button-label": ["OpenSans_600SemiBold", "sans-serif"],
+        caption: ["OpenSans_400Regular", "sans-serif"],
       },
     },
   },

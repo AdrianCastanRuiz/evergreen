@@ -65,7 +65,7 @@ export default function RequestPasswordResetScreen() {
           contentContainerClassName="flex-1 justify-center px-gutter py-8"
           keyboardShouldPersistTaps="handled"
         >
-          <Text className="font-hero text-[28px] font-semibold leading-[34px] tracking-[-0.01em] text-foreground">
+          <Text className="font-hero text-[28px] leading-[34px] tracking-[-0.01em] text-foreground">
             Check your email
           </Text>
           <Text className="mt-2 text-muted-foreground">
@@ -94,7 +94,7 @@ export default function RequestPasswordResetScreen() {
         contentContainerClassName="flex-1 justify-center px-gutter py-8"
         keyboardShouldPersistTaps="handled"
       >
-        <Text className="font-hero text-[28px] font-semibold leading-[34px] tracking-[-0.01em] text-foreground">
+        <Text className="font-hero text-[28px] leading-[34px] tracking-[-0.01em] text-foreground">
           Reset your password
         </Text>
         <Text className="mt-2 text-muted-foreground">
@@ -102,7 +102,7 @@ export default function RequestPasswordResetScreen() {
           new password.
         </Text>
 
-        <RNText className="mt-8 text-sm font-body font-medium text-foreground">
+        <RNText className="mt-8 text-sm font-body-medium text-foreground">
           Email
         </RNText>
         <Input

@@ -9,7 +9,7 @@ import {
 } from "react-native";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Text } from "@/components/ui/text";
 import { ApiError, NetworkError, request } from "@/lib/api";
 
@@ -85,7 +85,7 @@ export default function ResetPasswordScreen() {
         contentContainerClassName="flex-1 justify-center px-gutter py-8"
         keyboardShouldPersistTaps="handled"
       >
-        <Text className="font-hero text-[28px] font-semibold leading-[34px] tracking-[-0.01em] text-foreground">
+        <Text className="font-hero text-[28px] leading-[34px] tracking-[-0.01em] text-foreground">
           Set a new password
         </Text>
         <Text className="mt-2 text-muted-foreground">
@@ -108,28 +108,26 @@ export default function ResetPasswordScreen() {
           </>
         ) : (
           <>
-            <RNText className="mt-8 text-sm font-body font-medium text-foreground">
+            <RNText className="mt-8 text-sm font-body-medium text-foreground">
               New password
             </RNText>
-            <Input
+            <PasswordInput
               className="mt-2"
               value={password}
               onChangeText={setPassword}
               placeholder="At least 8 characters"
-              secureTextEntry
               autoComplete="new-password"
               editable={!submitting}
             />
 
-            <RNText className="mt-4 text-sm font-body font-medium text-foreground">
+            <RNText className="mt-4 text-sm font-body-medium text-foreground">
               Confirm password
             </RNText>
-            <Input
+            <PasswordInput
               className="mt-2"
               value={confirm}
               onChangeText={setConfirm}
               placeholder="Repeat your password"
-              secureTextEntry
               autoComplete="new-password"
               editable={!submitting}
             />
