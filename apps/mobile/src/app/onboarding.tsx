@@ -9,7 +9,7 @@ export default function OnboardingScreen() {
 
   return (
     <View className="flex-1 items-center justify-center bg-background px-gutter">
-      <Text className="font-heading text-2xl font-semibold text-foreground">
+      <Text className="font-heading text-2xl text-foreground">
         Welcome{user?.name ? `, ${user.name}` : ""}
       </Text>
       <Text className="mt-2 text-center text-muted-foreground">

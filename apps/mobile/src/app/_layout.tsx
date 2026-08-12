@@ -1,6 +1,15 @@
 import "../global.css";
 
+import { Roboto_600SemiBold } from "@expo-google-fonts/roboto";
+import { Oswald_600SemiBold } from "@expo-google-fonts/oswald";
+import {
+  OpenSans_400Regular,
+  OpenSans_500Medium,
+  OpenSans_600SemiBold,
+} from "@expo-google-fonts/open-sans";
+import { Raleway_600SemiBold } from "@expo-google-fonts/raleway";
 import * as Sentry from "@sentry/react-native";
+import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -17,11 +26,18 @@ if (process.env.EXPO_PUBLIC_SENTRY_DSN) {
   Sentry.init({ dsn: process.env.EXPO_PUBLIC_SENTRY_DSN, enabled: true });
 }
 
-// DESIGN.md fonts (Roboto/Oswald/Open Sans/Raleway) are declared as NativeWind
-// tokens but not bundled as assets. Loading them requires a font source
-// decision (@expo-google-fonts vs local .ttf) that is Ask-First per the frozen
-// spec-17 — pending human approval, so nothing is loaded here and the hero
-// classes fall back to the system sans font.
+// DESIGN.md fonts (Roboto/Oswald/Open Sans/Raleway) as @expo-google-fonts
+// variants. Each tailwind font token (hero/heading/body/...) maps to a
+// concrete weight-embedded variant, so no separate fontWeight is used with
+// custom fonts (Android renders empty otherwise).
+const FONTS = {
+  Roboto_600SemiBold,
+  Oswald_600SemiBold,
+  OpenSans_400Regular,
+  OpenSans_500Medium,
+  OpenSans_600SemiBold,
+  Raleway_600SemiBold,
+};
 
 // Auth-gated navigation (FR8). The Stack tree is STABLE — same screens in the
 // same order on every render — and only the Stack.Protected guards change with
@@ -46,12 +62,26 @@ function RootNavigator() {
       </Stack.Protected>
       <Stack.Protected guard={status === "unauthenticated"}>
         <Stack.Screen name="login" />
+        <Stack.Screen name="request-password-reset" />
+      </Stack.Protected>
+      {/* reset-password must stay reachable while "resolving" so a cold-start
+          deep link from the emailed reset URL lands here before /auth/me
+          settles — but never while a session is active. Declared after login
+          so the unauthenticated anchor stays login. */}
+      <Stack.Protected guard={status !== "authenticated"}>
+        <Stack.Screen name="reset-password" />
       </Stack.Protected>
     </Stack>
   );
 }
 
 export default function RootLayout() {
+  // Hold the splash native screen while the bundled fonts load — rendering
+  // the UI with a half-loaded font set would flash the system sans font and
+  //, on Android, can render empty glyphs for families that aren't ready.
+  const [fontsLoaded, fontsError] = useFonts(FONTS);
+  const renderApp = fontsLoaded || fontsError != null;
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
@@ -60,8 +90,14 @@ export default function RootLayout() {
           persistOptions={{ persister: queryPersister }}
         >
           <AuthProvider>
-            <RootNavigator />
-            <StatusBar style="auto" />
+            {renderApp ? (
+              <>
+                <RootNavigator />
+                <StatusBar style="auto" />
+              </>
+            ) : (
+              <StatusBar style="auto" />
+            )}
           </AuthProvider>
         </PersistQueryClientProvider>
       </SafeAreaProvider>

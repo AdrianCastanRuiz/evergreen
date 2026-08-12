@@ -27,7 +27,7 @@ const buttonVariants = cva(
 );
 
 const buttonTextVariants = cva(
-  "web:whitespace-nowrap text-sm font-body font-medium text-primary-foreground",
+  "web:whitespace-nowrap text-sm font-body-medium text-primary-foreground",
   {
     variants: {
       variant: {
@@ -57,7 +57,7 @@ const Button = React.forwardRef<View, ButtonProps>(
   ({ className, variant, size, children, disabled, ...props }, ref) => {
     return (
       <TextClassContext.Provider
-        value={buttonTextVariants({ variant, size, className })}
+        value={buttonTextVariants({ variant, size })}
       >
         <Pressable
           ref={ref}
