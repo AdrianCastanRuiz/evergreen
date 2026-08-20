@@ -16,14 +16,32 @@ import { ApiError, NetworkError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 // Login screen (FR2). Visual treatment deliberately matches the
-// evergreendemo.netlify.app reference 1:1 (logo, copy, coral accent
-// #CD6B5D) per explicit request — this is a one-off departure from
-// DESIGN.md's green primary/destructive-red split, scoped to this screen
-// only via arbitrary-value classNames (no shared token/component change).
-// Errors are inline and scoped: invalid credentials (401), rate limit
-// (429 — human message, never auto-retry), and network loss (inputs
-// preserved for a retry without re-typing). No token is issued on any
-// failure.
+// evergreendemo.netlify.app reference (logo, copy, coral accent) per
+// explicit request — a one-off departure from DESIGN.md's green
+// primary/destructive-red split, scoped to this screen only via
+// arbitrary-value classNames (no shared token/component change). The
+// demo's raw coral (#CD6B5D) and subtitle gray (#7a7f6a) both fail WCAG
+// AA (4.5:1) as text/button-label colors on white — darkened here to the
+// nearest AA-passing shade of the same hue rather than reproduced exactly
+// (code-review finding). Errors are inline and scoped: invalid
+// credentials (401), rate limit (429 — human message, never auto-retry),
+// and network loss (inputs preserved for a retry without re-typing). No
+// token is issued on any failure.
+// #AE5B4F / #9D5247 (resting / pressed button coral) are the same darkened
+// shades as below, kept literal in each className — NativeWind can't
+// extract an arbitrary-value class from a JS variable, so there's no way
+// to back those particular occurrences with a shared constant.
+const SUBTITLE_GRAY = "#707562"; // darkened from the demo's #7a7f6a — ~4.76:1 on white (AA)
+// border-2 border-input are already Input/PasswordInput's own defaults —
+// the flat fill, larger radius, and roomier height are the actual
+// overrides here. Horizontal padding is deliberately NOT included: it's
+// added separately per field below (`px-4` on Input, `pl-4` on
+// PasswordInput) because PasswordInput's own `pr-11` (space for the
+// show/hide icon) must survive — a shared `px-4` here would collide with
+// it under tailwind-merge's px/pr conflict resolution and eat the icon's
+// clearance.
+const FIELD_STYLE = "w-full h-12 rounded-[12px] bg-[#f5f5f3] text-foreground";
+
 export default function LoginScreen() {
   const { signIn } = useAuth();
   const { reset } = useLocalSearchParams<{ reset?: string }>();
@@ -75,15 +93,19 @@ export default function LoginScreen() {
           accessibilityLabel="Evergreen Care logo"
         />
 
-        <Text className="mt-4 text-[24px] font-bold leading-[29px] text-[#3a3d30]">
+        {/* font-body-emphasis (OpenSans_600SemiBold), not font-bold: a
+            fontWeight utility stacked on a custom fontFamily renders empty
+            on Android — no 700-weight Open Sans is loaded (see
+            tailwind.config.js). Code-review finding. */}
+        <Text className="mt-4 font-body-emphasis text-[24px] leading-[29px] text-[#3a3d30]">
           Evergreen Care
         </Text>
-        <Text className="mt-1 text-[13px] text-[#7a7f6a]">
+        <Text className="mt-1 text-[13px]" style={{ color: SUBTITLE_GRAY }}>
           Connecting families with their loved ones
         </Text>
 
         <Input
-          className="mt-9 w-full rounded-xl border-[1.5px] border-[#e8e8e4] bg-[#f5f5f3] text-foreground"
+          className={`mt-9 px-4 ${FIELD_STYLE}`}
           value={email}
           onChangeText={setEmail}
           placeholder="Email address"
@@ -97,7 +119,7 @@ export default function LoginScreen() {
 
         <PasswordInput
           className="mt-3 w-full"
-          inputClassName="rounded-xl border-[1.5px] border-[#e8e8e4] bg-[#f5f5f3]"
+          inputClassName={`pl-4 ${FIELD_STYLE}`}
           value={password}
           onChangeText={setPassword}
           placeholder="Password"
@@ -116,8 +138,16 @@ export default function LoginScreen() {
           <Text className="mt-4 self-start text-destructive">{error}</Text>
         ) : null}
 
+        {/* #AE5B4F / #9D5247: the demo's coral (#CD6B5D) darkened to pass
+            WCAG AA (4.5:1) as button/link text and fill on white — see the
+            file-header comment. Repeated literally across the three
+            occurrences below (button fill, pressed fill, outline
+            border/text) because NativeWind requires a static
+            arbitrary-value class name — it cannot extract one from a JS
+            variable — so there's no way to back these with a single
+            shared constant (code-review finding). */}
         <Button
-          className="mt-2 w-full rounded-xl bg-[#CD6B5D] active:bg-[#b85a4d]"
+          className="mt-2 w-full rounded-[12px] bg-[#AE5B4F] active:bg-[#9D5247]"
           size="lg"
           disabled={submitting}
           onPress={handleSubmit}
@@ -130,12 +160,12 @@ export default function LoginScreen() {
         </Button>
 
         <Button
-          className="mt-4 w-full rounded-xl border-[#CD6B5D]"
+          className="mt-4 w-full rounded-[12px] border-[#AE5B4F]"
           variant="outline"
           disabled={submitting}
           onPress={() => router.push("/request-password-reset")}
         >
-          <Text className="text-[#CD6B5D]">Forgot your password?</Text>
+          <Text className="text-[#AE5B4F]">Forgot your password?</Text>
         </Button>
       </ScrollView>
     </KeyboardAvoidingView>
