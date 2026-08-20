@@ -6,6 +6,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  View,
 } from "react-native";
 
 import { Button } from "@/components/ui/button";
@@ -82,16 +83,29 @@ export default function LoginScreen() {
       className="flex-1 bg-background"
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
+      {/* Purely decorative — two oversized soft-tone circles bleeding off
+          the top-left/bottom-right corners, echoing the logo's sage green
+          and the screen's coral accent, so the screen doesn't read as a
+          bare white form. pointerEvents="none" so they never intercept
+          touches meant for the form above them. */}
+      <View className="absolute inset-0" pointerEvents="none">
+        <View className="absolute -left-20 -top-24 h-72 w-72 rounded-full bg-[#8FA37A] opacity-[0.12]" />
+        <View className="absolute -bottom-28 -right-16 h-80 w-80 rounded-full bg-[#AE5B4F] opacity-[0.10]" />
+      </View>
+
       <ScrollView
         contentContainerClassName="flex-1 justify-center items-center px-gutter py-8"
         keyboardShouldPersistTaps="handled"
       >
-        <Image
-          source={require("@/assets/images/evergreen-logo.jpg")}
-          className="h-24 w-24 rounded-full"
-          accessibilityRole="image"
-          accessibilityLabel="Evergreen Care logo"
-        />
+        <View className="items-center justify-center">
+          <View className="absolute h-32 w-32 rounded-full bg-[#8FA37A] opacity-[0.15]" />
+          <Image
+            source={require("@/assets/images/evergreen-logo.jpg")}
+            className="h-24 w-24 rounded-full"
+            accessibilityRole="image"
+            accessibilityLabel="Evergreen Care logo"
+          />
+        </View>
 
         {/* font-body-emphasis (OpenSans_600SemiBold), not font-bold: a
             fontWeight utility stacked on a custom fontFamily renders empty
