@@ -160,16 +160,20 @@ export default function LoginScreen() {
             arbitrary-value class name — it cannot extract one from a JS
             variable — so there's no way to back these with a single
             shared constant (code-review finding). */}
+        {/* Green (bg-primary/active:bg-primary-hover), matching the
+            primary action on request-password-reset.tsx — the Sign In
+            button uses the app's standard green primary, not the coral
+            accent used elsewhere on this screen. */}
         <Button
-          className="mt-2 w-full rounded-[12px] bg-[#AE5B4F] active:bg-[#9D5247]"
+          className="mt-2 w-full rounded-[12px]"
           size="lg"
           disabled={submitting}
           onPress={handleSubmit}
         >
           {submitting ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <ActivityIndicator className="text-primary-foreground" />
           ) : (
-            <Text className="text-white">Sign In</Text>
+            <Text>Sign In</Text>
           )}
         </Button>
 
