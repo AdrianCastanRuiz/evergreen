@@ -139,8 +139,14 @@ export class UsersService {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
+    // Explicit select — never return the raw Prisma User (passwordHash must
+    // never leak into an API response), same as createUser's helper below.
+    // Code-review finding: the AC #4 branch spreads `existing` straight into
+    // the HTTP response, so without this the caller would receive the
+    // target user's bcrypt hash.
     const existing = await this.prisma.client.user.findUnique({
       where: { email: normalizedEmail },
+      select: { id: true, email: true, role: true, isActive: true },
     });
 
     if (existing) {
@@ -163,6 +169,14 @@ export class UsersService {
 
     let rawToken: string;
     try {
+      // `homeId` here is required by Prisma's generated type (no default
+      // on the column) but is NOT actually what determines the row's
+      // home_id: this is the non-bypass auto-inject path, and the
+      // tenant-scoping extension always overwrites it with the request
+      // context's own homeId last (tenant-scoping.extension.ts's
+      // injectHomeId spreads its value after the caller's data). The two
+      // values are guaranteed equal today (both derive from the same
+      // context), so this field is effectively inert — code-review finding.
       await this.prisma.client.homeMembership.create({
         data: { userId: user.id, homeId: actorHomeId, role: targetRole },
       });
@@ -197,9 +211,19 @@ export class UsersService {
       throw new ConflictException('This user is already a member of this home');
     }
 
-    await this.prisma.client.homeMembership.create({
-      data: { userId: existing.id, homeId: actorHomeId, role: 'family' },
-    });
+    try {
+      await this.prisma.client.homeMembership.create({
+        data: { userId: existing.id, homeId: actorHomeId, role: 'family' },
+      });
+    } catch (error) {
+      // TOCTOU: two concurrent invites of the same existing user into the
+      // same home can both pass the alreadyMember check above before
+      // either create commits — the loser's insert then violates
+      // @@unique([userId, homeId]) (code-review finding). Map that P2002 to
+      // the same 409 the single-request path already returns, instead of
+      // letting a raw Prisma error surface as an unhandled 500.
+      throw this.mapUniqueMembershipViolation(error);
+    }
 
     if (existing.isActive) {
       // Already has a password — no token/activation-link needed, just a
@@ -210,15 +234,46 @@ export class UsersService {
         .sendHomeAccessAddedEmail(existing.email, homeName)
         .catch(() => {});
     } else {
-      const rawToken = await this.passwordResetService.issueActivationToken(
-        existing.id,
-      );
+      let rawToken: string;
+      try {
+        rawToken = await this.passwordResetService.issueActivationToken(
+          existing.id,
+        );
+      } catch (error) {
+        // Code-review finding: without this, a token-issuance failure here
+        // left the HomeMembership committed with no token/email ever sent —
+        // the same partial-write bug createPendingHomeAdmin's own rollback
+        // already exists to prevent, just missing from this branch.
+        await this.rollbackHomeMembership(existing.id, actorHomeId, error);
+        throw error;
+      }
       this.mailService
         .sendAccountInviteEmail(existing.email, rawToken, homeName)
         .catch(() => {});
     }
 
     return { ...existing, homeId: actorHomeId };
+  }
+
+  // Compensating delete for grantExistingFamilyUserHomeAccess's
+  // HomeMembership write — mirrors rollbackPendingUser's shape (log +
+  // report to Sentry without masking the original error if the delete
+  // itself also fails).
+  private async rollbackHomeMembership(
+    userId: string,
+    homeId: string,
+    originalError: unknown,
+  ): Promise<void> {
+    try {
+      await this.prisma.client.homeMembership.delete({
+        where: { userId_homeId: { userId, homeId } },
+      });
+    } catch (deleteError) {
+      this.logger.error(
+        `Failed to roll back orphaned HomeMembership for user ${userId}/home ${homeId} after: ${String(originalError)}`,
+      );
+      Sentry.captureException(deleteError);
+    }
   }
 
   // HomeMembership cascades on User delete (schema's onDelete: Cascade), so
@@ -267,6 +322,18 @@ export class UsersService {
       error.code === 'P2002'
     ) {
       return new ConflictException('A user with this email already exists');
+    }
+    return error;
+  }
+
+  private mapUniqueMembershipViolation(error: unknown): unknown {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      return new ConflictException(
+        'This user is already a member of this home',
+      );
     }
     return error;
   }

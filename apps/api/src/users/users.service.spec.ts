@@ -14,7 +14,11 @@ describe('UsersService', () => {
   let prisma: {
     client: {
       user: { create: jest.Mock; delete: jest.Mock; findUnique: jest.Mock };
-      homeMembership: { create: jest.Mock; findUnique: jest.Mock };
+      homeMembership: {
+        create: jest.Mock;
+        findUnique: jest.Mock;
+        delete: jest.Mock;
+      };
     };
   };
   let passwordResetService: { issueActivationToken: jest.Mock };
@@ -48,7 +52,11 @@ describe('UsersService', () => {
     prisma = {
       client: {
         user: { create: jest.fn(), delete: jest.fn(), findUnique: jest.fn() },
-        homeMembership: { create: jest.fn(), findUnique: jest.fn() },
+        homeMembership: {
+          create: jest.fn(),
+          findUnique: jest.fn(),
+          delete: jest.fn(),
+        },
       },
     };
     passwordResetService = { issueActivationToken: jest.fn() };
@@ -304,6 +312,7 @@ describe('UsersService', () => {
 
       expect(prisma.client.user.findUnique).toHaveBeenCalledWith({
         where: { email: 'staff@evergreen.test' },
+        select: { id: true, email: true, role: true, isActive: true },
       });
       expect(prisma.client.user.create).toHaveBeenCalledWith({
         data: { email: 'staff@evergreen.test', role: 'staff', isActive: false },
@@ -456,6 +465,91 @@ describe('UsersService', () => {
         ),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(prisma.client.homeMembership.create).not.toHaveBeenCalled();
+    });
+
+    it('does not leak passwordHash for the AC #4 existing-user branch — the lookup uses an explicit select', async () => {
+      prisma.client.user.findUnique.mockResolvedValue(existingActiveFamily);
+      prisma.client.homeMembership.findUnique.mockResolvedValue(null);
+
+      const result = await usersService.inviteUser(
+        'admin',
+        'home-2',
+        'Sunny Meadows',
+        existingActiveFamily.email,
+        'family',
+      );
+
+      expect(prisma.client.user.findUnique).toHaveBeenCalledWith({
+        where: { email: existingActiveFamily.email },
+        select: { id: true, email: true, role: true, isActive: true },
+      });
+      expect(result).not.toHaveProperty('passwordHash');
+    });
+
+    it('maps a concurrent-invite race (P2002 on the HomeMembership create) to the same 409 instead of a raw 500', async () => {
+      prisma.client.user.findUnique.mockResolvedValue(existingActiveFamily);
+      prisma.client.homeMembership.findUnique.mockResolvedValue(null);
+      prisma.client.homeMembership.create.mockRejectedValue(uniqueViolation);
+
+      await expect(
+        usersService.inviteUser(
+          'admin',
+          'home-2',
+          'Sunny Meadows',
+          existingActiveFamily.email,
+          'family',
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mailService.sendHomeAccessAddedEmail).not.toHaveBeenCalled();
+      expect(mailService.sendAccountInviteEmail).not.toHaveBeenCalled();
+    });
+
+    it('rolls back the just-created HomeMembership when token issuance fails for an existing PENDING family user', async () => {
+      prisma.client.user.findUnique.mockResolvedValue(existingPendingFamily);
+      prisma.client.homeMembership.findUnique.mockResolvedValue(null);
+      const tokenError = new Error('token insert failed');
+      passwordResetService.issueActivationToken.mockRejectedValue(tokenError);
+
+      await expect(
+        usersService.inviteUser(
+          'admin',
+          'home-2',
+          'Sunny Meadows',
+          existingPendingFamily.email,
+          'family',
+        ),
+      ).rejects.toBe(tokenError);
+
+      expect(prisma.client.homeMembership.delete).toHaveBeenCalledWith({
+        where: {
+          userId_homeId: {
+            userId: existingPendingFamily.id,
+            homeId: 'home-2',
+          },
+        },
+      });
+      expect(mailService.sendAccountInviteEmail).not.toHaveBeenCalled();
+    });
+
+    it('reports to Sentry (without losing the original error) when the HomeMembership rollback delete itself fails', async () => {
+      prisma.client.user.findUnique.mockResolvedValue(existingPendingFamily);
+      prisma.client.homeMembership.findUnique.mockResolvedValue(null);
+      const tokenError = new Error('token insert failed');
+      passwordResetService.issueActivationToken.mockRejectedValue(tokenError);
+      const deleteError = new Error('delete also failed');
+      prisma.client.homeMembership.delete.mockRejectedValue(deleteError);
+
+      await expect(
+        usersService.inviteUser(
+          'admin',
+          'home-2',
+          'Sunny Meadows',
+          existingPendingFamily.email,
+          'family',
+        ),
+      ).rejects.toBe(tokenError);
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(deleteError);
     });
 
     it('rejects staff inviting another staff — same rank, not strictly downward (AC #5)', async () => {
