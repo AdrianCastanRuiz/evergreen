@@ -1,10 +1,29 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 import type { Role } from '../../generated/prisma';
 import { Prisma } from '../../generated/prisma';
 import { PasswordResetService } from '../auth/password-reset.service';
 import { MailService } from '../notifications/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
+
+// Story 1.5 (AC #5): invitation is strictly downward — a caller may only
+// invite a role ranked below their own. Derived from epics.md's coarse
+// chain (super_admin -> home_admin -> staff/family) plus its one worked
+// example (staff inviting a home admin is rejected); `family` ranks below
+// `staff` so a staff member can invite family but never another staff
+// (same-rank, also rejected). Scoped to this file only — no other story
+// needs a role-hierarchy comparison yet.
+const ROLE_RANK: Record<Role, number> = {
+  family: 0,
+  staff: 1,
+  admin: 2,
+  super_admin: 3,
+};
 
 export interface PendingUserResponse {
   id: string;
@@ -98,6 +117,108 @@ export class UsersService {
       .catch(() => {});
 
     return { ...user, homeId: null };
+  }
+
+  // Story 1.5: a home admin/staff invites a staff or family member into
+  // their own home (`actorHomeId`, resolved server-side from the caller's
+  // JWT — never attacker-suppliable). Unlike createPendingHomeAdmin, the
+  // actor is never super_admin here, so their JWT already carries a real
+  // homeId and the tenant-scoping Prisma extension auto-injects it into the
+  // HomeMembership write with no @BypassTenantScope() needed.
+  async inviteUser(
+    actorRole: Role,
+    actorHomeId: string,
+    homeName: string,
+    email: string,
+    targetRole: Role,
+  ): Promise<PendingUserResponse> {
+    // AC #5: strictly downward invitation. Checked before any read/write —
+    // a same-or-higher-rank invite never even looks up the target email.
+    if (ROLE_RANK[targetRole] >= ROLE_RANK[actorRole]) {
+      throw new ForbiddenException();
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const existing = await this.prisma.client.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (existing) {
+      // AC #4 only carves out one narrow exception: an existing *family*
+      // user being added to *another* home. Every other existing-email case
+      // (non-family role, or a family email being invited as staff) is a
+      // plain conflict — non-family roles are strictly single-home (AC #2),
+      // and a family email can't be "promoted" to staff via an invite.
+      if (targetRole !== 'family' || existing.role !== 'family') {
+        throw new ConflictException('A user with this email already exists');
+      }
+      return this.grantExistingFamilyUserHomeAccess(
+        existing,
+        actorHomeId,
+        homeName,
+      );
+    }
+
+    const user = await this.createUser(normalizedEmail, targetRole);
+
+    let rawToken: string;
+    try {
+      await this.prisma.client.homeMembership.create({
+        data: { userId: user.id, homeId: actorHomeId, role: targetRole },
+      });
+      rawToken = await this.passwordResetService.issueActivationToken(user.id);
+    } catch (error) {
+      await this.rollbackPendingUser(user.id, error);
+      throw error;
+    }
+
+    this.mailService
+      .sendAccountInviteEmail(normalizedEmail, rawToken, homeName)
+      .catch(() => {});
+
+    return { ...user, homeId: actorHomeId };
+  }
+
+  // AC #4: the invited email already belongs to a family user active in a
+  // different home. No new User row — just a new HomeMembership — so the
+  // existing user gains access to both homes (AD-18) instead of a rejected
+  // duplicate-email conflict.
+  private async grantExistingFamilyUserHomeAccess(
+    existing: Omit<PendingUserResponse, 'homeId'>,
+    actorHomeId: string,
+    homeName: string,
+  ): Promise<PendingUserResponse> {
+    const alreadyMember = await this.prisma.client.homeMembership.findUnique({
+      where: {
+        userId_homeId: { userId: existing.id, homeId: actorHomeId },
+      },
+    });
+    if (alreadyMember) {
+      throw new ConflictException('This user is already a member of this home');
+    }
+
+    await this.prisma.client.homeMembership.create({
+      data: { userId: existing.id, homeId: actorHomeId, role: 'family' },
+    });
+
+    if (existing.isActive) {
+      // Already has a password — no token/activation-link needed, just a
+      // plain notification (see MailService.sendHomeAccessAddedEmail's
+      // comment for why this is deliberately NOT the same mechanism as a
+      // fresh invite, despite epics.md's AC #4 wording).
+      this.mailService
+        .sendHomeAccessAddedEmail(existing.email, homeName)
+        .catch(() => {});
+    } else {
+      const rawToken = await this.passwordResetService.issueActivationToken(
+        existing.id,
+      );
+      this.mailService
+        .sendAccountInviteEmail(existing.email, rawToken, homeName)
+        .catch(() => {});
+    }
+
+    return { ...existing, homeId: actorHomeId };
   }
 
   // HomeMembership cascades on User delete (schema's onDelete: Cascade), so
