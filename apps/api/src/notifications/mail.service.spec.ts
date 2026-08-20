@@ -228,4 +228,77 @@ describe('MailService', () => {
       expect(Sentry.captureException).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('sendHomeAccessAddedEmail', () => {
+    it('sends a link-free notification (no token/reset-password URL) via Resend', async () => {
+      sendMock.mockResolvedValue({ data: { id: 'email-1' }, error: null });
+      const mailService = await buildService('re_test_key');
+
+      await mailService.sendHomeAccessAddedEmail(
+        'family@b.com',
+        'Sunny Meadows',
+      );
+
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      const [sendArgs] = sendMock.mock.calls[0] as [
+        { to: string; from: string; subject: string; html: string },
+      ];
+      expect(sendArgs.to).toBe('family@b.com');
+      expect(sendArgs.subject).toBe(
+        'You now have access to a new home on Evergreen',
+      );
+      expect(sendArgs.html).toContain('Sunny Meadows');
+      expect(sendArgs.html).not.toContain('reset-password?token=');
+    });
+
+    it('no-ops when RESEND_API_KEY is unset', async () => {
+      const mailService = await buildService('');
+
+      await mailService.sendHomeAccessAddedEmail(
+        'family@b.com',
+        'Sunny Meadows',
+      );
+
+      expect(sendMock).not.toHaveBeenCalled();
+    });
+
+    it('HTML-escapes a home name containing markup, instead of injecting it verbatim', async () => {
+      sendMock.mockResolvedValue({ data: { id: 'email-1' }, error: null });
+      const mailService = await buildService('re_test_key');
+
+      await mailService.sendHomeAccessAddedEmail(
+        'family@b.com',
+        'Oaks <img src=x onerror=alert(1)> & "Sons"',
+      );
+
+      const [sendArgs] = sendMock.mock.calls[0] as [{ html: string }];
+      expect(sendArgs.html).not.toContain('<img');
+      expect(sendArgs.html).toContain(
+        'Oaks &lt;img src=x onerror=alert(1)&gt; &amp; &quot;Sons&quot;',
+      );
+    });
+
+    it('retries at 60s -> 5min -> 30min on failure, then gives up and reports to Sentry', async () => {
+      jest.useFakeTimers();
+      sendMock.mockRejectedValue(new Error('network down'));
+      const mailService = await buildService('re_test_key');
+
+      await mailService.sendHomeAccessAddedEmail(
+        'family@b.com',
+        'Sunny Meadows',
+      );
+      expect(sendMock).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(60_000);
+      expect(sendMock).toHaveBeenCalledTimes(2);
+
+      await jest.advanceTimersByTimeAsync(5 * 60_000);
+      expect(sendMock).toHaveBeenCalledTimes(3);
+
+      await jest.advanceTimersByTimeAsync(30 * 60_000);
+      expect(sendMock).toHaveBeenCalledTimes(4);
+
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    });
+  });
 });

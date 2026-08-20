@@ -86,6 +86,21 @@ export class MailService {
     });
   }
 
+  // Story 1.5: an existing family user who already has a password gains
+  // access to a second home. There's no token to consume — they can already
+  // log in — so this is deliberately NOT the activation-link flow
+  // (sendAccountInviteEmail); a "click here to set your password" email to
+  // someone who already has one would be confusing, not reassuring.
+  sendHomeAccessAddedEmail(email: string, homeName: string): Promise<void> {
+    return this.attemptSend({
+      email,
+      subject: 'You now have access to a new home on Evergreen',
+      html: this.buildHomeAccessAddedHtml(homeName),
+      logLabel: 'home access added notification',
+      retryCount: 0,
+    });
+  }
+
   private buildLink(rawToken: string): string {
     const link = new URL(this.resetPasswordUrl);
     link.searchParams.set('token', rawToken);
@@ -175,6 +190,13 @@ export class MailService {
       `<p><a href="${link}">Click here to set your password</a> and activate your account. ` +
       'This link expires in 1 hour and can only be used once.</p>' +
       "<p>If you weren't expecting this invite, you can safely ignore this email.</p>"
+    );
+  }
+
+  private buildHomeAccessAddedHtml(homeName: string): string {
+    return (
+      `<p>You now have access to <strong>${this.escapeHtml(homeName)}</strong> on Evergreen.</p>` +
+      '<p>Log in with your existing password to switch between your homes.</p>'
     );
   }
 

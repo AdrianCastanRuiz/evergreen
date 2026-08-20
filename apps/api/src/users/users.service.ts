@@ -1,10 +1,29 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 import type { Role } from '../../generated/prisma';
 import { Prisma } from '../../generated/prisma';
 import { PasswordResetService } from '../auth/password-reset.service';
 import { MailService } from '../notifications/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
+
+// Story 1.5 (AC #5): invitation is strictly downward — a caller may only
+// invite a role ranked below their own. Derived from epics.md's coarse
+// chain (super_admin -> home_admin -> staff/family) plus its one worked
+// example (staff inviting a home admin is rejected); `family` ranks below
+// `staff` so a staff member can invite family but never another staff
+// (same-rank, also rejected). Scoped to this file only — no other story
+// needs a role-hierarchy comparison yet.
+const ROLE_RANK: Record<Role, number> = {
+  family: 0,
+  staff: 1,
+  admin: 2,
+  super_admin: 3,
+};
 
 export interface PendingUserResponse {
   id: string;
@@ -100,6 +119,163 @@ export class UsersService {
     return { ...user, homeId: null };
   }
 
+  // Story 1.5: a home admin/staff invites a staff or family member into
+  // their own home (`actorHomeId`, resolved server-side from the caller's
+  // JWT — never attacker-suppliable). Unlike createPendingHomeAdmin, the
+  // actor is never super_admin here, so their JWT already carries a real
+  // homeId and the tenant-scoping Prisma extension auto-injects it into the
+  // HomeMembership write with no @BypassTenantScope() needed.
+  async inviteUser(
+    actorRole: Role,
+    actorHomeId: string,
+    homeName: string,
+    email: string,
+    targetRole: Role,
+  ): Promise<PendingUserResponse> {
+    // AC #5: strictly downward invitation. Checked before any read/write —
+    // a same-or-higher-rank invite never even looks up the target email.
+    if (ROLE_RANK[targetRole] >= ROLE_RANK[actorRole]) {
+      throw new ForbiddenException();
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    // Explicit select — never return the raw Prisma User (passwordHash must
+    // never leak into an API response), same as createUser's helper below.
+    // Code-review finding: the AC #4 branch spreads `existing` straight into
+    // the HTTP response, so without this the caller would receive the
+    // target user's bcrypt hash.
+    const existing = await this.prisma.client.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true, email: true, role: true, isActive: true },
+    });
+
+    if (existing) {
+      // AC #4 only carves out one narrow exception: an existing *family*
+      // user being added to *another* home. Every other existing-email case
+      // (non-family role, or a family email being invited as staff) is a
+      // plain conflict — non-family roles are strictly single-home (AC #2),
+      // and a family email can't be "promoted" to staff via an invite.
+      if (targetRole !== 'family' || existing.role !== 'family') {
+        throw new ConflictException('A user with this email already exists');
+      }
+      return this.grantExistingFamilyUserHomeAccess(
+        existing,
+        actorHomeId,
+        homeName,
+      );
+    }
+
+    const user = await this.createUser(normalizedEmail, targetRole);
+
+    let rawToken: string;
+    try {
+      // `homeId` here is required by Prisma's generated type (no default
+      // on the column) but is NOT actually what determines the row's
+      // home_id: this is the non-bypass auto-inject path, and the
+      // tenant-scoping extension always overwrites it with the request
+      // context's own homeId last (tenant-scoping.extension.ts's
+      // injectHomeId spreads its value after the caller's data). The two
+      // values are guaranteed equal today (both derive from the same
+      // context), so this field is effectively inert — code-review finding.
+      await this.prisma.client.homeMembership.create({
+        data: { userId: user.id, homeId: actorHomeId, role: targetRole },
+      });
+      rawToken = await this.passwordResetService.issueActivationToken(user.id);
+    } catch (error) {
+      await this.rollbackPendingUser(user.id, error);
+      throw error;
+    }
+
+    this.mailService
+      .sendAccountInviteEmail(normalizedEmail, rawToken, homeName)
+      .catch(() => {});
+
+    return { ...user, homeId: actorHomeId };
+  }
+
+  // AC #4: the invited email already belongs to a family user active in a
+  // different home. No new User row — just a new HomeMembership — so the
+  // existing user gains access to both homes (AD-18) instead of a rejected
+  // duplicate-email conflict.
+  private async grantExistingFamilyUserHomeAccess(
+    existing: Omit<PendingUserResponse, 'homeId'>,
+    actorHomeId: string,
+    homeName: string,
+  ): Promise<PendingUserResponse> {
+    const alreadyMember = await this.prisma.client.homeMembership.findUnique({
+      where: {
+        userId_homeId: { userId: existing.id, homeId: actorHomeId },
+      },
+    });
+    if (alreadyMember) {
+      throw new ConflictException('This user is already a member of this home');
+    }
+
+    try {
+      await this.prisma.client.homeMembership.create({
+        data: { userId: existing.id, homeId: actorHomeId, role: 'family' },
+      });
+    } catch (error) {
+      // TOCTOU: two concurrent invites of the same existing user into the
+      // same home can both pass the alreadyMember check above before
+      // either create commits — the loser's insert then violates
+      // @@unique([userId, homeId]) (code-review finding). Map that P2002 to
+      // the same 409 the single-request path already returns, instead of
+      // letting a raw Prisma error surface as an unhandled 500.
+      throw this.mapUniqueMembershipViolation(error);
+    }
+
+    if (existing.isActive) {
+      // Already has a password — no token/activation-link needed, just a
+      // plain notification (see MailService.sendHomeAccessAddedEmail's
+      // comment for why this is deliberately NOT the same mechanism as a
+      // fresh invite, despite epics.md's AC #4 wording).
+      this.mailService
+        .sendHomeAccessAddedEmail(existing.email, homeName)
+        .catch(() => {});
+    } else {
+      let rawToken: string;
+      try {
+        rawToken = await this.passwordResetService.issueActivationToken(
+          existing.id,
+        );
+      } catch (error) {
+        // Code-review finding: without this, a token-issuance failure here
+        // left the HomeMembership committed with no token/email ever sent —
+        // the same partial-write bug createPendingHomeAdmin's own rollback
+        // already exists to prevent, just missing from this branch.
+        await this.rollbackHomeMembership(existing.id, actorHomeId, error);
+        throw error;
+      }
+      this.mailService
+        .sendAccountInviteEmail(existing.email, rawToken, homeName)
+        .catch(() => {});
+    }
+
+    return { ...existing, homeId: actorHomeId };
+  }
+
+  // Compensating delete for grantExistingFamilyUserHomeAccess's
+  // HomeMembership write — mirrors rollbackPendingUser's shape (log +
+  // report to Sentry without masking the original error if the delete
+  // itself also fails).
+  private async rollbackHomeMembership(
+    userId: string,
+    homeId: string,
+    originalError: unknown,
+  ): Promise<void> {
+    try {
+      await this.prisma.client.homeMembership.delete({
+        where: { userId_homeId: { userId, homeId } },
+      });
+    } catch (deleteError) {
+      this.logger.error(
+        `Failed to roll back orphaned HomeMembership for user ${userId}/home ${homeId} after: ${String(originalError)}`,
+      );
+      Sentry.captureException(deleteError);
+    }
+  }
+
   // HomeMembership cascades on User delete (schema's onDelete: Cascade), so
   // this one delete cleans up both rows regardless of which step above
   // failed — so a retry after a transient failure doesn't hit the
@@ -146,6 +322,18 @@ export class UsersService {
       error.code === 'P2002'
     ) {
       return new ConflictException('A user with this email already exists');
+    }
+    return error;
+  }
+
+  private mapUniqueMembershipViolation(error: unknown): unknown {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      return new ConflictException(
+        'This user is already a member of this home',
+      );
     }
     return error;
   }
