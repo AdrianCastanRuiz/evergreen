@@ -7,6 +7,11 @@ import { cn } from "@/lib/utils";
 interface PasswordInputProps
   extends React.ComponentPropsWithoutRef<typeof RNTextInput> {
   className?: string;
+  // Overrides the inner TextInput's visual style (border/bg/radius/etc.)
+  // independently of `className`, which only affects the wrapper View's
+  // layout (margin/position). Defaults preserve every existing caller's
+  // look untouched.
+  inputClassName?: string;
 }
 
 // Password field with a show/hide toggle (eye / eye-off). Replaces the bare
@@ -14,7 +19,7 @@ interface PasswordInputProps
 // baseline for any password form (login, set-password). The toggle is a
 // sibling Pressable, never a TextInput child, so focus/keyboard stay intact.
 const PasswordInput = React.forwardRef<RNTextInput, PasswordInputProps>(
-  ({ className, editable, ...props }, ref) => {
+  ({ className, inputClassName, editable, ...props }, ref) => {
     const [visible, setVisible] = React.useState(false);
 
     return (
@@ -25,6 +30,7 @@ const PasswordInput = React.forwardRef<RNTextInput, PasswordInputProps>(
           className={cn(
             "h-11 rounded-lg border-2 border-input bg-card pr-11 pl-3 text-base text-foreground placeholder:text-muted-foreground web:focus-visible:outline-none",
             editable === false && "opacity-50",
+            inputClassName,
           )}
           editable={editable}
           {...props}

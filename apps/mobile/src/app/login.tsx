@@ -2,10 +2,10 @@ import * as React from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Text as RNText,
 } from "react-native";
 
 import { Button } from "@/components/ui/button";
@@ -15,11 +15,15 @@ import { Text } from "@/components/ui/text";
 import { ApiError, NetworkError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
-// Login screen (FR2). The greeting uses the hero typography token per
-// DESIGN.md ({typography.hero} — Roboto 600/34px). Errors are inline and
-// scoped: invalid credentials (401), rate limit (429 — human message, never
-// auto-retry), and network loss (inputs preserved for a retry without
-// re-typing). No token is issued on any failure.
+// Login screen (FR2). Visual treatment deliberately matches the
+// evergreendemo.netlify.app reference 1:1 (logo, copy, coral accent
+// #CD6B5D) per explicit request — this is a one-off departure from
+// DESIGN.md's green primary/destructive-red split, scoped to this screen
+// only via arbitrary-value classNames (no shared token/component change).
+// Errors are inline and scoped: invalid credentials (401), rate limit
+// (429 — human message, never auto-retry), and network loss (inputs
+// preserved for a retry without re-typing). No token is issued on any
+// failure.
 export default function LoginScreen() {
   const { signIn } = useAuth();
   const { reset } = useLocalSearchParams<{ reset?: string }>();
@@ -61,24 +65,29 @@ export default function LoginScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
-        contentContainerClassName="flex-1 justify-center px-gutter py-8"
+        contentContainerClassName="flex-1 justify-center items-center px-gutter py-8"
         keyboardShouldPersistTaps="handled"
       >
-        <Text className="font-hero text-[34px] leading-[39px] tracking-[-0.01em] text-foreground">
-          Welcome to Evergreen
+        <Image
+          source={require("@/assets/images/evergreen-logo.jpg")}
+          className="h-24 w-24 rounded-full"
+          accessibilityRole="image"
+          accessibilityLabel="Evergreen Care logo"
+        />
+
+        <Text className="mt-4 text-[24px] font-bold leading-[29px] text-[#3a3d30]">
+          Evergreen Care
         </Text>
-        <Text className="mt-2 text-muted-foreground">
-          Sign in to see your care home updates.
+        <Text className="mt-1 text-[13px] text-[#7a7f6a]">
+          Connecting families with their loved ones
         </Text>
 
-        <RNText className="mt-8 text-sm font-body-medium text-foreground">
-          Email
-        </RNText>
         <Input
-          className="mt-2"
+          className="mt-9 w-full rounded-xl border-[1.5px] border-[#e8e8e4] bg-[#f5f5f3] text-foreground"
           value={email}
           onChangeText={setEmail}
-          placeholder="you@example.com"
+          placeholder="Email address"
+          accessibilityLabel="Email address"
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="email-address"
@@ -86,48 +95,47 @@ export default function LoginScreen() {
           editable={!submitting}
         />
 
-        <RNText className="mt-4 text-sm font-body-medium text-foreground">
-          Password
-        </RNText>
         <PasswordInput
-          className="mt-2"
+          className="mt-3 w-full"
+          inputClassName="rounded-xl border-[1.5px] border-[#e8e8e4] bg-[#f5f5f3]"
           value={password}
           onChangeText={setPassword}
-          placeholder="Your password"
+          placeholder="Password"
+          accessibilityLabel="Password"
           autoComplete="password"
           editable={!submitting}
         />
 
         {reset === "success" ? (
-          <Text className="mt-4 text-foreground">
+          <Text className="mt-4 self-start text-foreground">
             Your password has been updated. Sign in with your new password.
           </Text>
         ) : null}
 
         {error ? (
-          <Text className="mt-4 text-destructive">{error}</Text>
+          <Text className="mt-4 self-start text-destructive">{error}</Text>
         ) : null}
 
         <Button
-          className="mt-8"
+          className="mt-2 w-full rounded-xl bg-[#CD6B5D] active:bg-[#b85a4d]"
           size="lg"
           disabled={submitting}
           onPress={handleSubmit}
         >
           {submitting ? (
-            <ActivityIndicator className="text-primary-foreground" />
+            <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text>Sign in</Text>
+            <Text className="text-white">Sign In</Text>
           )}
         </Button>
 
         <Button
-          className="mt-4"
+          className="mt-4 w-full rounded-xl border-[#CD6B5D]"
           variant="outline"
           disabled={submitting}
           onPress={() => router.push("/request-password-reset")}
         >
-          <Text>Forgot your password?</Text>
+          <Text className="text-[#CD6B5D]">Forgot your password?</Text>
         </Button>
       </ScrollView>
     </KeyboardAvoidingView>
