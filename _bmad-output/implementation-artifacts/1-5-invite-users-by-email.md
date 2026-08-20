@@ -4,7 +4,7 @@ baseline_commit: 0d7d4e584a12ed90dfe03eeebbc1fb5260a4d8b6
 
 # Story 1.5: Home Admin/Staff Invites New Users (Staff or Family) by Email
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
