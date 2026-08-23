@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-08-06
-last_updated: 2026-08-23 # add 1-14 (issue #28)
+last_updated: 2026-08-23 # 1-12 done (PR #20 merged)
 project: evergreen
 project_key: NOKEY
 tracking_system: file-system
@@ -60,7 +60,7 @@ development_status:
   1-9-ver-y-editar-el-propio-perfil: backlog
   1-10-navegacion-basada-en-rol-tras-login: backlog
   1-11-logout-y-manejo-de-expiracion-de-sesion: in-progress
-  1-12-home-admins-gestionan-usuarios-y-roles-de-su-home: backlog
+  1-12-home-admins-gestionan-usuarios-y-roles-de-su-home: done # issue #26 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/20 (merged)
   1-13-scaffold-real-de-apps-admin-portal-web: done # issue #27 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/19 (merged)
   1-14-login-del-portal-web: backlog # issue #28 — apps/admin no tiene login/tokens/rutas protegidas; Story 1.6 solo se implementó en mobile. Ask-First pendiente: estrategia de guardado de tokens en web (AD-8 asume keychain de SO)
   epic-1-retrospective: optional
