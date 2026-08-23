@@ -3,11 +3,13 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 import type { Role } from '../../generated/prisma';
 import { Prisma } from '../../generated/prisma';
 import { PasswordResetService } from '../auth/password-reset.service';
+import { TenantContextService } from '../common/tenant/tenant-context.service';
 import { MailService } from '../notifications/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -25,6 +27,12 @@ const ROLE_RANK: Record<Role, number> = {
   super_admin: 3,
 };
 
+// Story 1.12: a home admin only ever lists/manages `staff`/`family` within
+// their own home — `admin`/`super_admin` stay Story 1.3/1.4's exclusive
+// territory. Same boundary as InviteUserDto's INVITABLE_ROLES, kept
+// separate on purpose (DTO validation vs. service-layer query filter).
+const MANAGEABLE_ROLES: Role[] = ['staff', 'family'];
+
 export interface PendingUserResponse {
   id: string;
   email: string;
@@ -35,6 +43,14 @@ export interface PendingUserResponse {
   homeId: string | null;
 }
 
+export interface HomeUserSummary {
+  id: string;
+  email: string;
+  name: string | null;
+  role: 'staff' | 'family';
+  isActive: boolean;
+}
+
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
@@ -43,6 +59,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly passwordResetService: PasswordResetService,
     private readonly mailService: MailService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   // Story 1.3: super_admin invites a home admin for `homeId`. Creates a
@@ -314,6 +331,233 @@ export class UsersService {
     } catch (error) {
       throw this.mapUniqueEmailViolation(error);
     }
+  }
+
+  // Story 1.12 (AC #1): every staff+family user in the caller's own home,
+  // via HomeMembership (auto-scoped by the tenant-scoping extension) — User
+  // itself has no home_id column to filter on directly.
+  async listHomeUsers(homeId: string): Promise<HomeUserSummary[]> {
+    const memberships = await this.prisma.client.homeMembership.findMany({
+      where: { homeId, role: { in: MANAGEABLE_ROLES } },
+      include: {
+        user: {
+          select: { id: true, email: true, name: true, isActive: true },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return memberships.map((membership) => ({
+      id: membership.user.id,
+      email: membership.user.email,
+      name: membership.user.name,
+      role: membership.role as 'staff' | 'family',
+      isActive: membership.user.isActive,
+    }));
+  }
+
+  // Shared by updateUserRole/revokeAccess (code-review finding: this
+  // lookup + the two rejection cases were duplicated verbatim in both).
+  private async resolveManageableMembership(
+    actorUserId: string,
+    actorHomeId: string,
+    targetUserId: string,
+  ) {
+    // Self-lockout guard — not in the story's AC, but changing/revoking your
+    // own access through the same endpoint that manages users *below* you
+    // invites an accidental self-lockout with no one left to undo it.
+    if (targetUserId === actorUserId) {
+      throw new ForbiddenException();
+    }
+
+    const membership = await this.prisma.client.homeMembership.findUnique({
+      where: { userId_homeId: { userId: targetUserId, homeId: actorHomeId } },
+      include: {
+        user: {
+          select: { id: true, email: true, name: true, isActive: true },
+        },
+      },
+    });
+    // Covers both "not in my home" and "is admin/super_admin" (out of
+    // MANAGEABLE_ROLES) with the same 404 — never reveals which (AC #3).
+    if (!membership || !MANAGEABLE_ROLES.includes(membership.role)) {
+      throw new NotFoundException('User not found in your home');
+    }
+    return membership;
+  }
+
+  // Story 1.12 (AC #2, #4): changes a target user's role within the
+  // caller's own home. Updates User.role AND this home's HomeMembership.role
+  // together — User.role is what AuthService.login/refresh actually put in
+  // the JWT (AD-8), so HomeMembership.role alone would be cosmetic.
+  async updateUserRole(
+    actorUserId: string,
+    actorHomeId: string,
+    targetUserId: string,
+    newRole: 'staff' | 'family',
+  ): Promise<HomeUserSummary> {
+    const membership = await this.resolveManageableMembership(
+      actorUserId,
+      actorHomeId,
+      targetUserId,
+    );
+    const previousRole = membership.role as 'staff' | 'family';
+
+    if (newRole === 'staff') {
+      // `staff` requires the "exactly one home" invariant AuthService's
+      // login/refresh already assumes (resolveFixedHomeId /
+      // assertFixedHomeInvariant) — promoting a user linked to several
+      // homes would silently violate it. Counted across ALL of the user's
+      // homes, not just this one, so this must step outside the current
+      // tenant scope (AD-1) — same escape hatch AuthService.resolveFixedHomeId
+      // uses, not the (super_admin-only) @BypassTenantScope() decorator.
+      //
+      // Known accepted race (code-review finding): this count and the
+      // writes below aren't atomic with a concurrent invite on another home
+      // granting this same user a second membership in between — closing it
+      // would need a serializable transaction spanning both this method and
+      // UsersService.inviteUser's write path, which the tenant-scoping
+      // extension's own internal per-call transaction (see
+      // tenant-scoping.extension.ts) already documents as unverified
+      // territory for nesting. Narrow window (two admins of different homes
+      // racing the same email within milliseconds); not closed here.
+      const membershipCount = await this.tenantContext.runBypassed(() =>
+        this.prisma.client.homeMembership.count({
+          where: { userId: targetUserId },
+        }),
+      );
+      if (membershipCount > 1) {
+        throw new ConflictException(
+          'Cannot promote a user who belongs to more than one home to staff',
+        );
+      }
+    }
+
+    await this.prisma.client.user.update({
+      where: { id: targetUserId },
+      data: { role: newRole },
+    });
+
+    try {
+      await this.prisma.client.homeMembership.update({
+        where: {
+          userId_homeId: { userId: targetUserId, homeId: actorHomeId },
+        },
+        data: { role: newRole },
+      });
+    } catch (error) {
+      // Compensating rollback — same shape as createPendingHomeAdmin's
+      // rollbackPendingUser: the User.role write above already committed,
+      // so a failure here (including a concurrent revoke racing this same
+      // request — mapRecordNotFound below) must not leave User.role and
+      // HomeMembership.role disagreeing about this user's actual access.
+      await this.rollbackUserRole(targetUserId, previousRole, error);
+      throw this.mapRecordNotFoundViolation(error);
+    }
+
+    return {
+      id: membership.user.id,
+      email: membership.user.email,
+      name: membership.user.name,
+      role: newRole,
+      isActive: membership.user.isActive,
+    };
+  }
+
+  // Story 1.12 (AC #5): removes a user's access to the caller's home —
+  // deletes their HomeMembership row for this home, not the User itself
+  // (a family user may still legitimately belong to other homes). If this
+  // was their last membership anywhere, also deactivates the account: a
+  // homeless-but-active User can't do anything useful, and this makes their
+  // very next refresh()/login() (which both re-check isActive fresh from
+  // the DB) fail immediately instead of only via the up-to-15-minute
+  // residual window on an already-issued access token.
+  async revokeAccess(
+    actorUserId: string,
+    actorHomeId: string,
+    targetUserId: string,
+  ): Promise<void> {
+    await this.resolveManageableMembership(
+      actorUserId,
+      actorHomeId,
+      targetUserId,
+    );
+
+    try {
+      await this.prisma.client.homeMembership.delete({
+        where: {
+          userId_homeId: { userId: targetUserId, homeId: actorHomeId },
+        },
+      });
+    } catch (error) {
+      // A concurrent second revoke of the same membership (or the target
+      // being re-invited to a different role) can race this delete —
+      // mapped to the same 404 the initial lookup above would have given,
+      // never a raw 500.
+      throw this.mapRecordNotFoundViolation(error);
+    }
+
+    // Same cross-home escape hatch as updateUserRole's promotion check —
+    // a plain (non-bypassed) count here would be auto-scoped to
+    // actorHomeId and always read 0 right after the delete above,
+    // regardless of memberships the user still holds elsewhere.
+    //
+    // Deliberately NOT rolled back on failure the way the two-write methods
+    // above are: the delete already committed the revocation the caller
+    // asked for, and silently recreating the membership because this
+    // trailing deactivation step failed would be a worse surprise than
+    // leaving a rare homeless-but-still-active account for Sentry to catch.
+    try {
+      const remaining = await this.tenantContext.runBypassed(() =>
+        this.prisma.client.homeMembership.count({
+          where: { userId: targetUserId },
+        }),
+      );
+      if (remaining === 0) {
+        await this.prisma.client.user.update({
+          where: { id: targetUserId },
+          data: { isActive: false },
+        });
+      }
+    } catch (error) {
+      this.logger.error(
+        `Revoked user ${targetUserId}'s home ${actorHomeId} membership but failed the follow-up deactivation check: ${String(error)}`,
+      );
+      Sentry.captureException(error);
+      throw error;
+    }
+  }
+
+  // Compensating rollback for updateUserRole's HomeMembership write — mirrors
+  // rollbackPendingUser/rollbackHomeMembership's shape (log + report to
+  // Sentry without masking the original error if the rollback itself also
+  // fails).
+  private async rollbackUserRole(
+    userId: string,
+    previousRole: Role,
+    originalError: unknown,
+  ): Promise<void> {
+    try {
+      await this.prisma.client.user.update({
+        where: { id: userId },
+        data: { role: previousRole },
+      });
+    } catch (rollbackError) {
+      this.logger.error(
+        `Failed to roll back User.role for ${userId} to ${previousRole} after: ${String(originalError)}`,
+      );
+      Sentry.captureException(rollbackError);
+    }
+  }
+
+  private mapRecordNotFoundViolation(error: unknown): unknown {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2025'
+    ) {
+      return new NotFoundException('User not found in your home');
+    }
+    return error;
   }
 
   private mapUniqueEmailViolation(error: unknown): unknown {

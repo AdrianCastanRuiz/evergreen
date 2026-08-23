@@ -1,8 +1,13 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as Sentry from '@sentry/nestjs';
 import { Prisma } from '../../generated/prisma';
 import { PasswordResetService } from '../auth/password-reset.service';
+import { TenantContextService } from '../common/tenant/tenant-context.service';
 import { MailService } from '../notifications/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from './users.service';
@@ -13,11 +18,19 @@ describe('UsersService', () => {
   let usersService: UsersService;
   let prisma: {
     client: {
-      user: { create: jest.Mock; delete: jest.Mock; findUnique: jest.Mock };
+      user: {
+        create: jest.Mock;
+        delete: jest.Mock;
+        findUnique: jest.Mock;
+        update: jest.Mock;
+      };
       homeMembership: {
         create: jest.Mock;
         findUnique: jest.Mock;
+        findMany: jest.Mock;
+        update: jest.Mock;
         delete: jest.Mock;
+        count: jest.Mock;
       };
     };
   };
@@ -27,6 +40,7 @@ describe('UsersService', () => {
     sendSuperAdminInviteEmail: jest.Mock;
     sendHomeAccessAddedEmail: jest.Mock;
   };
+  let tenantContext: { runBypassed: jest.Mock };
 
   const pendingUser = {
     id: 'user-1',
@@ -47,15 +61,28 @@ describe('UsersService', () => {
     clientVersion: 'test',
   });
 
+  const recordNotFoundViolation = new Prisma.PrismaClientKnownRequestError(
+    'not found',
+    { code: 'P2025', clientVersion: 'test' },
+  );
+
   beforeEach(async () => {
     jest.clearAllMocks();
     prisma = {
       client: {
-        user: { create: jest.fn(), delete: jest.fn(), findUnique: jest.fn() },
+        user: {
+          create: jest.fn(),
+          delete: jest.fn(),
+          findUnique: jest.fn(),
+          update: jest.fn(),
+        },
         homeMembership: {
           create: jest.fn(),
           findUnique: jest.fn(),
+          findMany: jest.fn(),
+          update: jest.fn(),
           delete: jest.fn(),
+          count: jest.fn(),
         },
       },
     };
@@ -65,6 +92,13 @@ describe('UsersService', () => {
       sendSuperAdminInviteEmail: jest.fn().mockResolvedValue(undefined),
       sendHomeAccessAddedEmail: jest.fn().mockResolvedValue(undefined),
     };
+    // runBypassed just runs the callback for these tests — the mock Prisma
+    // client isn't tenant-scoping-aware, so there's no real bypass branch to
+    // exercise; only that UsersService calls through it (not a plain
+    // homeMembership.count) is what these tests assert.
+    tenantContext = {
+      runBypassed: jest.fn((fn: () => unknown) => fn()),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -72,6 +106,7 @@ describe('UsersService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: PasswordResetService, useValue: passwordResetService },
         { provide: MailService, useValue: mailService },
+        { provide: TenantContextService, useValue: tenantContext },
       ],
     }).compile();
 
@@ -610,6 +645,311 @@ describe('UsersService', () => {
         where: { id: 'user-3' },
       });
       expect(mailService.sendAccountInviteEmail).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listHomeUsers', () => {
+    it('returns staff+family memberships of the given home, using the membership role (AC #1)', async () => {
+      prisma.client.homeMembership.findMany.mockResolvedValue([
+        {
+          role: 'staff',
+          user: {
+            id: 'user-10',
+            email: 'staff@evergreen.test',
+            name: 'Staff Person',
+            isActive: true,
+          },
+        },
+        {
+          role: 'family',
+          user: {
+            id: 'user-11',
+            email: 'family@evergreen.test',
+            name: null,
+            isActive: false,
+          },
+        },
+      ]);
+
+      const result = await usersService.listHomeUsers('home-1');
+
+      expect(prisma.client.homeMembership.findMany).toHaveBeenCalledWith({
+        where: { homeId: 'home-1', role: { in: ['staff', 'family'] } },
+        include: {
+          user: {
+            select: { id: true, email: true, name: true, isActive: true },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(result).toEqual([
+        {
+          id: 'user-10',
+          email: 'staff@evergreen.test',
+          name: 'Staff Person',
+          role: 'staff',
+          isActive: true,
+        },
+        {
+          id: 'user-11',
+          email: 'family@evergreen.test',
+          name: null,
+          role: 'family',
+          isActive: false,
+        },
+      ]);
+    });
+  });
+
+  describe('updateUserRole', () => {
+    const targetMembership = {
+      role: 'family' as const,
+      user: {
+        id: 'user-20',
+        email: 'family@evergreen.test',
+        name: 'Family Person',
+        isActive: true,
+      },
+    };
+
+    it('rejects a home admin changing their own role (self-lockout)', async () => {
+      await expect(
+        usersService.updateUserRole('user-20', 'home-1', 'user-20', 'staff'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.client.homeMembership.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('rejects a target outside the caller home or with a non-manageable role (AC #3) with 404, not 403', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue(null);
+
+      await expect(
+        usersService.updateUserRole('actor-1', 'home-1', 'user-99', 'staff'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.client.user.update).not.toHaveBeenCalled();
+    });
+
+    it('treats an admin-role membership as not-found — never manageable via this endpoint', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue({
+        role: 'admin',
+        user: { id: 'user-30', email: 'admin@evergreen.test' },
+      });
+
+      await expect(
+        usersService.updateUserRole('actor-1', 'home-1', 'user-30', 'staff'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('promotes family to staff and updates both User.role and HomeMembership.role (AC #2)', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue(
+        targetMembership,
+      );
+      prisma.client.homeMembership.count.mockResolvedValue(1);
+
+      const result = await usersService.updateUserRole(
+        'actor-1',
+        'home-1',
+        'user-20',
+        'staff',
+      );
+
+      expect(tenantContext.runBypassed).toHaveBeenCalled();
+      expect(prisma.client.homeMembership.count).toHaveBeenCalledWith({
+        where: { userId: 'user-20' },
+      });
+      expect(prisma.client.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-20' },
+        data: { role: 'staff' },
+      });
+      expect(prisma.client.homeMembership.update).toHaveBeenCalledWith({
+        where: { userId_homeId: { userId: 'user-20', homeId: 'home-1' } },
+        data: { role: 'staff' },
+      });
+      expect(result.role).toBe('staff');
+    });
+
+    it('rejects promoting a user linked to more than one home to staff (breaks the single-home invariant)', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue(
+        targetMembership,
+      );
+      prisma.client.homeMembership.count.mockResolvedValue(2);
+
+      await expect(
+        usersService.updateUserRole('actor-1', 'home-1', 'user-20', 'staff'),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.client.user.update).not.toHaveBeenCalled();
+      expect(prisma.client.homeMembership.update).not.toHaveBeenCalled();
+    });
+
+    it('demotes staff to family without checking membership count — single-home is already guaranteed', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue({
+        role: 'staff',
+        user: {
+          id: 'user-21',
+          email: 'staff@evergreen.test',
+          name: null,
+          isActive: true,
+        },
+      });
+
+      await usersService.updateUserRole(
+        'actor-1',
+        'home-1',
+        'user-21',
+        'family',
+      );
+
+      expect(prisma.client.homeMembership.count).not.toHaveBeenCalled();
+      expect(prisma.client.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-21' },
+        data: { role: 'family' },
+      });
+    });
+
+    it('rolls back User.role when the HomeMembership.update fails, and maps a concurrent-delete race (P2025) to 404 (code-review finding)', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue({
+        role: 'staff',
+        user: {
+          id: 'user-22',
+          email: 'staff@evergreen.test',
+          name: null,
+          isActive: true,
+        },
+      });
+      prisma.client.homeMembership.update.mockRejectedValue(
+        recordNotFoundViolation,
+      );
+
+      await expect(
+        usersService.updateUserRole('actor-1', 'home-1', 'user-22', 'family'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      // First call sets the new role, second call (the rollback) restores
+      // the pre-change role read from the membership lookup.
+      expect(prisma.client.user.update).toHaveBeenNthCalledWith(1, {
+        where: { id: 'user-22' },
+        data: { role: 'family' },
+      });
+      expect(prisma.client.user.update).toHaveBeenNthCalledWith(2, {
+        where: { id: 'user-22' },
+        data: { role: 'staff' },
+      });
+    });
+
+    it('rolls back User.role and rethrows the original error unmapped for a non-P2025 failure', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue(
+        targetMembership,
+      );
+      const transientError = new Error('connection reset');
+      prisma.client.homeMembership.update.mockRejectedValue(transientError);
+
+      await expect(
+        usersService.updateUserRole('actor-1', 'home-1', 'user-20', 'staff'),
+      ).rejects.toBe(transientError);
+
+      expect(prisma.client.user.update).toHaveBeenNthCalledWith(2, {
+        where: { id: 'user-20' },
+        data: { role: 'family' }, // rolled back to the pre-change role
+      });
+    });
+
+    it('reports to Sentry (without losing the original error) when the User.role rollback itself fails', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue(
+        targetMembership,
+      );
+      const membershipError = new Error('membership update failed');
+      prisma.client.homeMembership.update.mockRejectedValue(membershipError);
+      const rollbackError = new Error('rollback also failed');
+      prisma.client.user.update.mockImplementationOnce(() =>
+        Promise.resolve({}),
+      );
+      prisma.client.user.update.mockImplementationOnce(() =>
+        Promise.reject(rollbackError),
+      );
+
+      await expect(
+        usersService.updateUserRole('actor-1', 'home-1', 'user-20', 'staff'),
+      ).rejects.toBe(membershipError);
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(rollbackError);
+    });
+  });
+
+  describe('revokeAccess', () => {
+    it('rejects a home admin revoking their own access (self-lockout)', async () => {
+      await expect(
+        usersService.revokeAccess('user-40', 'home-1', 'user-40'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.client.homeMembership.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('rejects a target outside the caller home or with a non-manageable role with 404', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue(null);
+
+      await expect(
+        usersService.revokeAccess('actor-1', 'home-1', 'user-99'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.client.homeMembership.delete).not.toHaveBeenCalled();
+    });
+
+    it('deletes the HomeMembership and deactivates the user when it was their last one (AC #5)', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue({
+        role: 'staff',
+      });
+      prisma.client.homeMembership.count.mockResolvedValue(0);
+
+      await usersService.revokeAccess('actor-1', 'home-1', 'user-41');
+
+      expect(prisma.client.homeMembership.delete).toHaveBeenCalledWith({
+        where: { userId_homeId: { userId: 'user-41', homeId: 'home-1' } },
+      });
+      expect(tenantContext.runBypassed).toHaveBeenCalled();
+      expect(prisma.client.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-41' },
+        data: { isActive: false },
+      });
+    });
+
+    it('deletes the HomeMembership but leaves the user active when they still belong to another home', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue({
+        role: 'family',
+      });
+      prisma.client.homeMembership.count.mockResolvedValue(1);
+
+      await usersService.revokeAccess('actor-1', 'home-1', 'user-42');
+
+      expect(prisma.client.homeMembership.delete).toHaveBeenCalled();
+      expect(prisma.client.user.update).not.toHaveBeenCalled();
+    });
+
+    it('maps a concurrent second revoke of the same membership (P2025) to 404 instead of a raw 500 (code-review finding)', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue({
+        role: 'staff',
+      });
+      prisma.client.homeMembership.delete.mockRejectedValue(
+        recordNotFoundViolation,
+      );
+
+      await expect(
+        usersService.revokeAccess('actor-1', 'home-1', 'user-41'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.client.user.update).not.toHaveBeenCalled();
+    });
+
+    it('reports to Sentry and rethrows (not swallows) when the trailing deactivation check fails after the delete already committed', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue({
+        role: 'staff',
+      });
+      const countError = new Error('count query failed');
+      prisma.client.homeMembership.count.mockRejectedValue(countError);
+
+      await expect(
+        usersService.revokeAccess('actor-1', 'home-1', 'user-41'),
+      ).rejects.toBe(countError);
+
+      // The membership delete itself is not retried/rolled back — it
+      // already committed the revocation the caller asked for.
+      expect(prisma.client.homeMembership.delete).toHaveBeenCalledTimes(1);
+      expect(Sentry.captureException).toHaveBeenCalledWith(countError);
     });
   });
 });

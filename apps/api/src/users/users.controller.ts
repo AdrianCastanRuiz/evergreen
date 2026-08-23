@@ -1,10 +1,15 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
+  Get,
   HttpCode,
   HttpStatus,
   NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Patch,
   Post,
 } from '@nestjs/common';
 import { Roles } from '../common/auth/roles.decorator';
@@ -12,7 +17,8 @@ import { TenantContextService } from '../common/tenant/tenant-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSuperAdminDto } from './dto/create-super-admin.dto';
 import { InviteUserDto } from './dto/invite-user.dto';
-import type { PendingUserResponse } from './users.service';
+import { UpdateUserRoleDto } from './dto/update-user-role.dto';
+import type { HomeUserSummary, PendingUserResponse } from './users.service';
 import { UsersService } from './users.service';
 
 // Story 1.4 (FR49): platform-level user management, not scoped to any home
@@ -67,5 +73,51 @@ export class UsersController {
       dto.email,
       dto.role,
     );
+  }
+
+  // Story 1.12 (AC #1): home admin lists the staff+family users of their
+  // own home.
+  @Roles('admin')
+  @Get()
+  async listUsers(): Promise<HomeUserSummary[]> {
+    const store = this.tenantContext.getStore();
+    if (!store?.homeId) {
+      throw new ForbiddenException();
+    }
+    return this.usersService.listHomeUsers(store.homeId);
+  }
+
+  // Story 1.12 (AC #2, #3, #4): home admin changes a staff/family user's
+  // role within their own home. Actor identity/home come from the tenant
+  // context (their own JWT), never the request body/params.
+  @Roles('admin')
+  @Patch(':id/role')
+  async updateUserRole(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateUserRoleDto,
+  ): Promise<HomeUserSummary> {
+    const store = this.tenantContext.getStore();
+    if (!store?.userId || !store.homeId) {
+      throw new ForbiddenException();
+    }
+    return this.usersService.updateUserRole(
+      store.userId,
+      store.homeId,
+      id,
+      dto.role,
+    );
+  }
+
+  // Story 1.12 (AC #5): home admin revokes a staff/family user's access to
+  // their own home.
+  @Roles('admin')
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async revokeAccess(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    const store = this.tenantContext.getStore();
+    if (!store?.userId || !store.homeId) {
+      throw new ForbiddenException();
+    }
+    return this.usersService.revokeAccess(store.userId, store.homeId, id);
   }
 }
