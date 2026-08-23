@@ -33,7 +33,7 @@ for the full rationale (AD-1).
 ```
 apps/
   api/                 # NestJS REST API — see apps/api/prisma/schema.prisma for the data model
-  admin/                # Vite + React admin portal (staff/admin/super_admin) — not yet implemented
+  admin/                # Vite + React admin portal (staff/admin/super_admin) — shell scaffolded, screens pending (Story 1.10+)
   mobile/               # Expo React Native app (family/staff) — not yet implemented
 packages/
   shared-types/         # API contract types, imported by api + admin + mobile
@@ -90,3 +90,11 @@ Backend build follows the phased plan in
 validation, Sentry, CI/CD) is done on the `develop` branch. Phases 1–8 (auth,
 residents, content, photos, events, meals, push notifications, analytics)
 follow the epics in [`epics.md`](_bmad-output/planning-artifacts/epics.md).
+
+`apps/admin` has a real technical scaffold (Vite + React + TypeScript,
+shadcn/ui, TanStack Router/Query, Evergreen brand tokens from
+[`DESIGN.md`](_bmad-output/planning-artifacts/ux-designs/ux-evergreen-2026-07-01/DESIGN.md),
+a responsive top-nav/sidebar-nav shell) but no business screens yet — those
+land story by story starting with Story 1.10 (role-based navigation) and
+1.12 (home admin user management). Run it with
+`pnpm --filter @evergreen/admin run dev` (`http://localhost:5173`).

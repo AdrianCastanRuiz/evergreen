@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Evergreen brand tokens (DESIGN.md) as HSL triples, shadcn CSS-variable
+   convention — mirror any change here in apps/mobile's NativeWind config. */
+@layer base {
+  :root {
+    --primary: 140 66% 31%; /* #1B853F */
+    --primary-hover: 110 74% 20%; /* #19570D */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 140 39% 28%; /* #2C643F */
+    --secondary-foreground: 0 0% 100%;
+
+    --accent: 182 51% 37%; /* #2E8C8F */
+    --accent-blue: 207 55% 42%; /* #3070A5 */
+    --accent-blue-hover: 215 62% 53%; /* #3C7AD1 */
+    --accent-blue-foreground: 0 0% 100%;
+
+    --background: 0 0% 100%;
+    --foreground: 0 0% 13%; /* #222222 */
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 13%;
+
+    --muted: 0 0% 97%; /* #F8F8F8 */
+    --muted-alt: 0 0% 96%; /* #F6F6F6 */
+    --muted-foreground: 0 0% 36%; /* #5C5C5C */
+
+    --border: 0 0% 55%; /* #8C8C8C */
+    --border-strong: 0 0% 43%; /* #6E6E6E */
+    --input: 0 0% 55%;
+    --ring: 140 66% 31%; /* same as primary */
+
+    --destructive: 2 58% 48%; /* #C23934 */
+    --destructive-foreground: 0 0% 100%;
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Open Sans", sans-serif;
+  }
+}

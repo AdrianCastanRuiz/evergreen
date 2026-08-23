@@ -68,3 +68,9 @@ jobs:
 
       - name: E2E tests (tenant isolation suite lives here — see Deferred in ARCHITECTURE-SPINE.md)
         run: pnpm --filter @evergreen/api run test:e2e
+
+      - name: Build admin
+        run: pnpm --filter @evergreen/admin run build
+
+      - name: Lint admin
+        run: pnpm --filter @evergreen/admin run lint
