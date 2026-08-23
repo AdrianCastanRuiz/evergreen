@@ -21,12 +21,19 @@ import { useAuth } from "@/lib/auth";
 // auto-retry), and network loss (inputs preserved for a retry without
 // re-typing). No token is issued on any failure.
 export default function LoginScreen() {
-  const { signIn } = useAuth();
+  const { signIn, sessionEndReason, clearSessionEndReason } = useAuth();
   const { reset } = useLocalSearchParams<{ reset?: string }>();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  // A session-expiry landing must be heard once, not on every later visit to
+  // login (e.g. returning from the request-reset screen). Clear the reason
+  // when this screen unmounts so it never re-shows for an unrelated login.
+  React.useEffect(() => {
+    return () => clearSessionEndReason();
+  }, [clearSessionEndReason]);
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -101,6 +108,12 @@ export default function LoginScreen() {
         {reset === "success" ? (
           <Text className="mt-4 text-foreground">
             Your password has been updated. Sign in with your new password.
+          </Text>
+        ) : null}
+
+        {sessionEndReason === "expired" ? (
+          <Text className="mt-4 text-foreground">
+            Your session ended. Please log in again.
           </Text>
         ) : null}
 
