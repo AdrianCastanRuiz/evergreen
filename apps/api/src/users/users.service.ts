@@ -356,19 +356,16 @@ export class UsersService {
     }));
   }
 
-  // Story 1.12 (AC #2, #4): changes a target user's role within the
-  // caller's own home. Updates User.role AND this home's HomeMembership.role
-  // together — User.role is what AuthService.login/refresh actually put in
-  // the JWT (AD-8), so HomeMembership.role alone would be cosmetic.
-  async updateUserRole(
+  // Shared by updateUserRole/revokeAccess (code-review finding: this
+  // lookup + the two rejection cases were duplicated verbatim in both).
+  private async resolveManageableMembership(
     actorUserId: string,
     actorHomeId: string,
     targetUserId: string,
-    newRole: 'staff' | 'family',
-  ): Promise<HomeUserSummary> {
-    // Self-lockout guard — not in the story's AC, but changing your own role
-    // through the same endpoint that manages users *below* you invites an
-    // accidental self-demotion with no one left to undo it.
+  ) {
+    // Self-lockout guard — not in the story's AC, but changing/revoking your
+    // own access through the same endpoint that manages users *below* you
+    // invites an accidental self-lockout with no one left to undo it.
     if (targetUserId === actorUserId) {
       throw new ForbiddenException();
     }
@@ -386,6 +383,25 @@ export class UsersService {
     if (!membership || !MANAGEABLE_ROLES.includes(membership.role)) {
       throw new NotFoundException('User not found in your home');
     }
+    return membership;
+  }
+
+  // Story 1.12 (AC #2, #4): changes a target user's role within the
+  // caller's own home. Updates User.role AND this home's HomeMembership.role
+  // together — User.role is what AuthService.login/refresh actually put in
+  // the JWT (AD-8), so HomeMembership.role alone would be cosmetic.
+  async updateUserRole(
+    actorUserId: string,
+    actorHomeId: string,
+    targetUserId: string,
+    newRole: 'staff' | 'family',
+  ): Promise<HomeUserSummary> {
+    const membership = await this.resolveManageableMembership(
+      actorUserId,
+      actorHomeId,
+      targetUserId,
+    );
+    const previousRole = membership.role as 'staff' | 'family';
 
     if (newRole === 'staff') {
       // `staff` requires the "exactly one home" invariant AuthService's
@@ -395,6 +411,16 @@ export class UsersService {
       // homes, not just this one, so this must step outside the current
       // tenant scope (AD-1) — same escape hatch AuthService.resolveFixedHomeId
       // uses, not the (super_admin-only) @BypassTenantScope() decorator.
+      //
+      // Known accepted race (code-review finding): this count and the
+      // writes below aren't atomic with a concurrent invite on another home
+      // granting this same user a second membership in between — closing it
+      // would need a serializable transaction spanning both this method and
+      // UsersService.inviteUser's write path, which the tenant-scoping
+      // extension's own internal per-call transaction (see
+      // tenant-scoping.extension.ts) already documents as unverified
+      // territory for nesting. Narrow window (two admins of different homes
+      // racing the same email within milliseconds); not closed here.
       const membershipCount = await this.tenantContext.runBypassed(() =>
         this.prisma.client.homeMembership.count({
           where: { userId: targetUserId },
@@ -411,10 +437,23 @@ export class UsersService {
       where: { id: targetUserId },
       data: { role: newRole },
     });
-    await this.prisma.client.homeMembership.update({
-      where: { userId_homeId: { userId: targetUserId, homeId: actorHomeId } },
-      data: { role: newRole },
-    });
+
+    try {
+      await this.prisma.client.homeMembership.update({
+        where: {
+          userId_homeId: { userId: targetUserId, homeId: actorHomeId },
+        },
+        data: { role: newRole },
+      });
+    } catch (error) {
+      // Compensating rollback — same shape as createPendingHomeAdmin's
+      // rollbackPendingUser: the User.role write above already committed,
+      // so a failure here (including a concurrent revoke racing this same
+      // request — mapRecordNotFound below) must not leave User.role and
+      // HomeMembership.role disagreeing about this user's actual access.
+      await this.rollbackUserRole(targetUserId, previousRole, error);
+      throw this.mapRecordNotFoundViolation(error);
+    }
 
     return {
       id: membership.user.id,
@@ -438,36 +477,87 @@ export class UsersService {
     actorHomeId: string,
     targetUserId: string,
   ): Promise<void> {
-    if (targetUserId === actorUserId) {
-      throw new ForbiddenException();
-    }
+    await this.resolveManageableMembership(
+      actorUserId,
+      actorHomeId,
+      targetUserId,
+    );
 
-    const membership = await this.prisma.client.homeMembership.findUnique({
-      where: { userId_homeId: { userId: targetUserId, homeId: actorHomeId } },
-    });
-    if (!membership || !MANAGEABLE_ROLES.includes(membership.role)) {
-      throw new NotFoundException('User not found in your home');
+    try {
+      await this.prisma.client.homeMembership.delete({
+        where: {
+          userId_homeId: { userId: targetUserId, homeId: actorHomeId },
+        },
+      });
+    } catch (error) {
+      // A concurrent second revoke of the same membership (or the target
+      // being re-invited to a different role) can race this delete —
+      // mapped to the same 404 the initial lookup above would have given,
+      // never a raw 500.
+      throw this.mapRecordNotFoundViolation(error);
     }
-
-    await this.prisma.client.homeMembership.delete({
-      where: { userId_homeId: { userId: targetUserId, homeId: actorHomeId } },
-    });
 
     // Same cross-home escape hatch as updateUserRole's promotion check —
     // a plain (non-bypassed) count here would be auto-scoped to
     // actorHomeId and always read 0 right after the delete above,
     // regardless of memberships the user still holds elsewhere.
-    const remaining = await this.tenantContext.runBypassed(() =>
-      this.prisma.client.homeMembership.count({
-        where: { userId: targetUserId },
-      }),
-    );
-    if (remaining === 0) {
-      await this.prisma.client.user.update({
-        where: { id: targetUserId },
-        data: { isActive: false },
-      });
+    //
+    // Deliberately NOT rolled back on failure the way the two-write methods
+    // above are: the delete already committed the revocation the caller
+    // asked for, and silently recreating the membership because this
+    // trailing deactivation step failed would be a worse surprise than
+    // leaving a rare homeless-but-still-active account for Sentry to catch.
+    try {
+      const remaining = await this.tenantContext.runBypassed(() =>
+        this.prisma.client.homeMembership.count({
+          where: { userId: targetUserId },
+        }),
+      );
+      if (remaining === 0) {
+        await this.prisma.client.user.update({
+          where: { id: targetUserId },
+          data: { isActive: false },
+        });
+      }
+    } catch (error) {
+      this.logger.error(
+        `Revoked user ${targetUserId}'s home ${actorHomeId} membership but failed the follow-up deactivation check: ${String(error)}`,
+      );
+      Sentry.captureException(error);
+      throw error;
     }
+  }
+
+  // Compensating rollback for updateUserRole's HomeMembership write — mirrors
+  // rollbackPendingUser/rollbackHomeMembership's shape (log + report to
+  // Sentry without masking the original error if the rollback itself also
+  // fails).
+  private async rollbackUserRole(
+    userId: string,
+    previousRole: Role,
+    originalError: unknown,
+  ): Promise<void> {
+    try {
+      await this.prisma.client.user.update({
+        where: { id: userId },
+        data: { role: previousRole },
+      });
+    } catch (rollbackError) {
+      this.logger.error(
+        `Failed to roll back User.role for ${userId} to ${previousRole} after: ${String(originalError)}`,
+      );
+      Sentry.captureException(rollbackError);
+    }
+  }
+
+  private mapRecordNotFoundViolation(error: unknown): unknown {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2025'
+    ) {
+      return new NotFoundException('User not found in your home');
+    }
+    return error;
   }
 
   private mapUniqueEmailViolation(error: unknown): unknown {

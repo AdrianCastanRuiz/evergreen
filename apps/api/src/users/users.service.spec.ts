@@ -61,6 +61,11 @@ describe('UsersService', () => {
     clientVersion: 'test',
   });
 
+  const recordNotFoundViolation = new Prisma.PrismaClientKnownRequestError(
+    'not found',
+    { code: 'P2025', clientVersion: 'test' },
+  );
+
   beforeEach(async () => {
     jest.clearAllMocks();
     prisma = {
@@ -799,6 +804,74 @@ describe('UsersService', () => {
         data: { role: 'family' },
       });
     });
+
+    it('rolls back User.role when the HomeMembership.update fails, and maps a concurrent-delete race (P2025) to 404 (code-review finding)', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue({
+        role: 'staff',
+        user: {
+          id: 'user-22',
+          email: 'staff@evergreen.test',
+          name: null,
+          isActive: true,
+        },
+      });
+      prisma.client.homeMembership.update.mockRejectedValue(
+        recordNotFoundViolation,
+      );
+
+      await expect(
+        usersService.updateUserRole('actor-1', 'home-1', 'user-22', 'family'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      // First call sets the new role, second call (the rollback) restores
+      // the pre-change role read from the membership lookup.
+      expect(prisma.client.user.update).toHaveBeenNthCalledWith(1, {
+        where: { id: 'user-22' },
+        data: { role: 'family' },
+      });
+      expect(prisma.client.user.update).toHaveBeenNthCalledWith(2, {
+        where: { id: 'user-22' },
+        data: { role: 'staff' },
+      });
+    });
+
+    it('rolls back User.role and rethrows the original error unmapped for a non-P2025 failure', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue(
+        targetMembership,
+      );
+      const transientError = new Error('connection reset');
+      prisma.client.homeMembership.update.mockRejectedValue(transientError);
+
+      await expect(
+        usersService.updateUserRole('actor-1', 'home-1', 'user-20', 'staff'),
+      ).rejects.toBe(transientError);
+
+      expect(prisma.client.user.update).toHaveBeenNthCalledWith(2, {
+        where: { id: 'user-20' },
+        data: { role: 'family' }, // rolled back to the pre-change role
+      });
+    });
+
+    it('reports to Sentry (without losing the original error) when the User.role rollback itself fails', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue(
+        targetMembership,
+      );
+      const membershipError = new Error('membership update failed');
+      prisma.client.homeMembership.update.mockRejectedValue(membershipError);
+      const rollbackError = new Error('rollback also failed');
+      prisma.client.user.update.mockImplementationOnce(() =>
+        Promise.resolve({}),
+      );
+      prisma.client.user.update.mockImplementationOnce(() =>
+        Promise.reject(rollbackError),
+      );
+
+      await expect(
+        usersService.updateUserRole('actor-1', 'home-1', 'user-20', 'staff'),
+      ).rejects.toBe(membershipError);
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(rollbackError);
+    });
   });
 
   describe('revokeAccess', () => {
@@ -846,6 +919,37 @@ describe('UsersService', () => {
 
       expect(prisma.client.homeMembership.delete).toHaveBeenCalled();
       expect(prisma.client.user.update).not.toHaveBeenCalled();
+    });
+
+    it('maps a concurrent second revoke of the same membership (P2025) to 404 instead of a raw 500 (code-review finding)', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue({
+        role: 'staff',
+      });
+      prisma.client.homeMembership.delete.mockRejectedValue(
+        recordNotFoundViolation,
+      );
+
+      await expect(
+        usersService.revokeAccess('actor-1', 'home-1', 'user-41'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.client.user.update).not.toHaveBeenCalled();
+    });
+
+    it('reports to Sentry and rethrows (not swallows) when the trailing deactivation check fails after the delete already committed', async () => {
+      prisma.client.homeMembership.findUnique.mockResolvedValue({
+        role: 'staff',
+      });
+      const countError = new Error('count query failed');
+      prisma.client.homeMembership.count.mockRejectedValue(countError);
+
+      await expect(
+        usersService.revokeAccess('actor-1', 'home-1', 'user-41'),
+      ).rejects.toBe(countError);
+
+      // The membership delete itself is not retried/rolled back — it
+      // already committed the revocation the caller asked for.
+      expect(prisma.client.homeMembership.delete).toHaveBeenCalledTimes(1);
+      expect(Sentry.captureException).toHaveBeenCalledWith(countError);
     });
   });
 });
