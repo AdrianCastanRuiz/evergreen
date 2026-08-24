@@ -44,12 +44,19 @@ const SUBTITLE_GRAY = "#707562"; // darkened from the demo's #7a7f6a — ~4.76:1
 const FIELD_STYLE = "w-full h-12 rounded-[12px] bg-[#f5f5f3] text-foreground";
 
 export default function LoginScreen() {
-  const { signIn } = useAuth();
+  const { signIn, sessionEndReason, clearSessionEndReason } = useAuth();
   const { reset } = useLocalSearchParams<{ reset?: string }>();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  // A session-expiry landing must be heard once, not on every later visit to
+  // login (e.g. returning from the request-reset screen). Clear the reason
+  // when this screen unmounts so it never re-shows for an unrelated login.
+  React.useEffect(() => {
+    return () => clearSessionEndReason();
+  }, [clearSessionEndReason]);
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -145,6 +152,12 @@ export default function LoginScreen() {
         {reset === "success" ? (
           <Text className="mt-4 self-start text-foreground">
             Your password has been updated. Sign in with your new password.
+          </Text>
+        ) : null}
+
+        {sessionEndReason === "expired" ? (
+          <Text className="mt-4 text-foreground">
+            Your session ended. Please log in again.
           </Text>
         ) : null}
 

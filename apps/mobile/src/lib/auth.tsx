@@ -1,14 +1,25 @@
 import type { LoginRequest, LoginResponse, MeResponse } from "@evergreen/shared-types";
 import * as React from "react";
 
-import { authedRequest, request, SessionExpiredError } from "@/lib/api";
+import { authedRequest, onSessionExpired, request, SessionExpiredError } from "@/lib/api";
 import { clearTokens, saveTokens } from "@/lib/keychain";
+import { queryClient } from "@/lib/query-client";
 
 export type AuthStatus = "resolving" | "authenticated" | "unauthenticated";
+
+/**
+ * Why the session ended, surfaced on the login screen. `"expired"` when the
+ * refresh token became invalid/expired (UX-DR27); cleared on sign-in/out and
+ * when login unmounts. A fresh launch with an empty keychain is NOT an expiry
+ * and never sets this.
+ */
+export type SessionEndReason = "expired" | null;
 
 interface AuthContextValue {
   status: AuthStatus;
   user: MeResponse | null;
+  sessionEndReason: SessionEndReason;
+  clearSessionEndReason: () => void;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -33,6 +44,16 @@ const AuthContext = React.createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = React.useState<AuthStatus>("resolving");
   const [user, setUser] = React.useState<MeResponse | null>(null);
+  const [sessionEndReason, setSessionEndReason] =
+    React.useState<SessionEndReason>(null);
+
+  // Mirror of `status` readable from the expiry notifier subscribed once. Lets
+  // AuthProvider perform the session-expiry transition exactly once: after it
+  // flips to unauthenticated, a late 401 from an in-flight request is ignored.
+  const statusRef = React.useRef<AuthStatus>("resolving");
+  React.useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   const resolveSession = React.useCallback(async () => {
     try {
@@ -59,6 +80,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timer);
   }, [resolveSession]);
 
+  // Single owner of the session-expiry UI transition (UX-DR27, Story 1.11).
+  // A genuine refresh failure is notified by the single-flight refresh bus
+  // exactly once; the status ref guarantees only one transition even if a
+  // stale in-flight request 401s after we already went unauthenticated.
+  React.useEffect(() => {
+    return onSessionExpired(() => {
+      const current = statusRef.current;
+      if (current !== "authenticated" && current !== "resolving") return;
+
+      clearTokens().catch(() => {});
+      queryClient.clear();
+      setUser(null);
+      setSessionEndReason("expired");
+      setStatus("unauthenticated");
+    });
+  }, []);
+
   const signIn = React.useCallback(async (email: string, password: string) => {
     const body: LoginRequest = { email, password };
     const tokens = await request<LoginResponse>("/auth/login", {
@@ -70,6 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Resolve the user best-effort; if the call fails, index routes to the
     // home placeholder and the session is re-resolved on the next launch.
     // Only errors thrown BEFORE this point (login itself) reach the form.
+    setSessionEndReason(null);
     setStatus("authenticated");
     try {
       const me = await authedRequest<MeResponse>("/auth/me");
@@ -80,14 +119,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = React.useCallback(async () => {
+    // Local keychain clear is what actually logs out (stateless JWT); the
+    // public logout endpoint is fire-and-forget so an expired access token
+    // doesn't block the transition (backend always 204s).
+    request<void>("/auth/logout", { method: "POST" }).catch(() => {});
+    setSessionEndReason(null);
     await clearTokens().catch(() => {});
+    // Drop the day-long persisted query cache so no stale data or future
+    // write-queue entry carries over into the next session (AC3).
+    queryClient.clear();
     setUser(null);
     setStatus("unauthenticated");
   }, []);
 
+  const clearSessionEndReason = React.useCallback(() => {
+    setSessionEndReason(null);
+  }, []);
+
   const value = React.useMemo(
-    () => ({ status, user, signIn, signOut }),
-    [status, user, signIn, signOut],
+    () => ({ status, user, sessionEndReason, clearSessionEndReason, signIn, signOut }),
+    [status, user, sessionEndReason, clearSessionEndReason, signIn, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

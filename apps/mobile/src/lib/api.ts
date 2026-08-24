@@ -147,6 +147,25 @@ export async function request<T>(
   return (await response.json()) as T;
 }
 
+/**
+ * Session-expiry bus. The single integration point for a genuinely unrecoverable
+ * session (refresh token invalid/expired). AuthProvider subscribes and owns the
+ * single UI transition (UX-DR27, Story 1.11). Fired from inside doRefresh, which
+ * is single-flight, so a distinct expiry event produces exactly one notification
+ * even when several screens receive the same SessionExpiredError.
+ */
+type SessionExpiredListener = () => void;
+const expiredListeners = new Set<SessionExpiredListener>();
+
+export function onSessionExpired(listener: SessionExpiredListener): () => void {
+  expiredListeners.add(listener);
+  return () => expiredListeners.delete(listener);
+}
+
+function notifySessionExpired(): void {
+  expiredListeners.forEach((listener) => listener());
+}
+
 let refreshPromise: Promise<string> | null = null;
 
 /**
@@ -180,6 +199,10 @@ async function doRefresh(): Promise<string> {
     });
   } catch (err) {
     if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+      // Genuine session expiry (not a "no tokens" launch, not a transient
+      // 429/network blip): emit exactly once so AuthProvider can surface the
+      // UX-DR27 "session ended" message and single transition.
+      notifySessionExpired();
       throw new SessionExpiredError(err.message);
     }
     // 429 (rate limit) or 5xx / NetworkError: keep the session intact and
