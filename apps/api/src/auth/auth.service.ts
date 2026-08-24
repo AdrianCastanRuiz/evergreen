@@ -12,6 +12,11 @@ import { PasswordService } from './password.service';
 const ACCESS_TOKEN_TTL = '15m';
 const REFRESH_TOKEN_TTL = '30d';
 
+// Mirrors REFRESH_TOKEN_TTL above (30 days) as milliseconds, for the
+// refresh_token cookie's maxAge (Story 1.14, AuthController). Exported
+// rather than duplicated so the two can't silently drift apart.
+export const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
 // A precomputed bcrypt hash of no real password. Compared against on every
 // login where the account doesn't exist or has no passwordHash yet, so a
 // failed lookup costs the same wall-clock time as a wrong-password compare
