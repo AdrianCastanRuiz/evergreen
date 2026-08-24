@@ -5,14 +5,21 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Req,
+  Res,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import type { CookieOptions, Request, Response } from 'express';
 import type { Role } from '../../generated/prisma';
 import { Public } from '../common/auth/public.decorator';
 import { TenantContextService } from '../common/tenant/tenant-context.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuthService, type TokenPair } from './auth.service';
+import {
+  AuthService,
+  REFRESH_TOKEN_TTL_MS,
+  type TokenPair,
+} from './auth.service';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
@@ -28,6 +35,24 @@ export interface MeResponse {
   homeId: string | null;
 }
 
+const REFRESH_COOKIE_NAME = 'refresh_token';
+
+// apps/admin's session (Story 1.14): the refresh token never reaches its
+// JS — only this cookie carries it, scoped to /auth so it's sent on
+// refresh/logout but not on every unrelated API call. `sameSite: 'none'`
+// (not 'lax') because apps/admin and this API may be deployed on separate
+// registrable domains (e.g. distinct *.onrender.com subdomains, which are
+// cross-SITE, not just cross-origin) — 'lax' would silently drop the
+// cookie on fetch/XHR in that case. Requires `secure: true`; browsers
+// special-case localhost to still allow that over plain HTTP in dev.
+const REFRESH_COOKIE_OPTIONS: CookieOptions = {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'none',
+  path: '/auth',
+  maxAge: REFRESH_TOKEN_TTL_MS,
+};
+
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -42,8 +67,20 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  login(@Body() dto: LoginDto): Promise<TokenPair> {
-    return this.authService.login(dto.email, dto.password);
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<TokenPair> {
+    const tokens = await this.authService.login(dto.email, dto.password);
+    // Body is unchanged (mobile needs refreshToken there — it has no
+    // cookie jar); apps/admin must discard the field and rely on this
+    // cookie instead (Story 1.14 Dev Notes).
+    res.cookie(
+      REFRESH_COOKIE_NAME,
+      tokens.refreshToken,
+      REFRESH_COOKIE_OPTIONS,
+    );
+    return tokens;
   }
 
   // Looser than login but still tighter than the global default — this
@@ -53,8 +90,32 @@ export class AuthController {
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  refresh(@Body() dto: RefreshDto): Promise<TokenPair> {
-    return this.authService.refresh(dto.refreshToken);
+  async refresh(
+    @Body() dto: RefreshDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<TokenPair> {
+    // Mobile sends it in the body; apps/admin sends none and relies on the
+    // cookie (Story 1.14). Either source is accepted, body takes priority
+    // only because it's the pre-existing contract — a caller never sends
+    // both in practice.
+    const refreshToken: string | undefined =
+      dto.refreshToken ??
+      (req.cookies as Record<string, string> | undefined)?.[
+        REFRESH_COOKIE_NAME
+      ];
+    if (!refreshToken) throw new UnauthorizedException('Invalid refresh token');
+
+    const tokens = await this.authService.refresh(refreshToken);
+    // AuthService.refresh rotates both tokens on every call — the cookie
+    // must be re-set with the new refresh token each time, or the browser
+    // would keep sending the now-invalid, already-rotated-away one.
+    res.cookie(
+      REFRESH_COOKIE_NAME,
+      tokens.refreshToken,
+      REFRESH_COOKIE_OPTIONS,
+    );
+    return tokens;
   }
 
   // Silently no-ops for an unknown email — same 204 either way, so the
@@ -93,7 +154,12 @@ export class AuthController {
   @Public()
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  logout(): void {}
+  logout(@Res({ passthrough: true }) res: Response): void {
+    // Still no server-side session to destroy (stateless JWT, see
+    // deferred-work.md) — this only clears the browser-held cookie
+    // (Story 1.14). Mobile has no cookie to clear; this is a no-op for it.
+    res.clearCookie(REFRESH_COOKIE_NAME, { path: '/auth' });
+  }
 
   // Backs the splash-screen auth-state resolution (FR8): the client calls
   // this with whatever access token it has in the keychain to find out if

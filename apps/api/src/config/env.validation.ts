@@ -25,4 +25,9 @@ export const envValidationSchema = Joi.object({
   // Required: the frontend page that reads the `?token=` query param from a
   // password-reset/activation email link (Story 1.7).
   RESET_PASSWORD_URL: Joi.string().uri().required(),
+
+  // Required: the deployed apps/admin origin, used as the single allowed
+  // CORS origin (credentialed requests can't use a wildcard) so the web
+  // portal can call this API with cookies (Story 1.14).
+  ADMIN_APP_URL: Joi.string().uri().required(),
 });

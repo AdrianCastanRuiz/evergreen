@@ -1,9 +1,9 @@
 import { createRoute } from "@tanstack/react-router";
 
-import { rootRoute } from "@/routes/root";
+import { protectedLayoutRoute } from "@/routes/protected-layout";
 
 export const indexRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedLayoutRoute,
   path: "/",
   component: IndexPage,
 });

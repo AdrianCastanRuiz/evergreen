@@ -33,6 +33,10 @@ jobs:
       # Required at boot (env.validation.ts) — CI never sends real reset
       # emails, so any syntactically valid URL satisfies Joi here (Story 1.7).
       RESET_PASSWORD_URL: http://localhost:5173/reset-password
+      # Required at boot (env.validation.ts) — CORS origin, any syntactically
+      # valid URL satisfies Joi here since CI never makes a real cross-origin
+      # request (Story 1.14).
+      ADMIN_APP_URL: http://localhost:5173
     steps:
       - uses: actions/checkout@v4
 
