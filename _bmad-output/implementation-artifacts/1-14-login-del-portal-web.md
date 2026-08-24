@@ -5,7 +5,7 @@ issue: 28
 
 # Story 1.14: Login del Portal Web (apps/admin) — Pantalla, Guardado de Tokens y Rutas Protegidas
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
