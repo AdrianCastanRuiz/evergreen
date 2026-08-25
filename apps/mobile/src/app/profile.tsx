@@ -30,6 +30,20 @@ export default function ProfileScreen() {
   const emailError =
     emailTouched && !EMAIL_RE.test(email) ? "Enter a valid email address" : null;
 
+  // A stale "Profile updated."/error banner next to freshly-typed, unsaved
+  // text would misleadingly imply the current value was already persisted
+  // (code-review finding) — clear both on any further edit.
+  const handleNameChange = (value: string) => {
+    setName(value);
+    setSaved(false);
+    setError(null);
+  };
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+    setSaved(false);
+    setError(null);
+  };
+
   const handleSave = async () => {
     setNameTouched(true);
     setEmailTouched(true);
@@ -53,6 +67,13 @@ export default function ProfileScreen() {
       if (err instanceof ApiError) {
         if (err.status === 409) {
           setError("This email is already in use by another account.");
+        } else if (err.status === 400) {
+          // The client's own EMAIL_RE is intentionally loose (matches
+          // apps/admin's login screen) and can accept a few malformed
+          // addresses the server's stricter validator rejects (e.g. two
+          // "@" signs) — surface the same specific message rather than
+          // the generic fallback (code-review finding).
+          setError("Enter a valid email address.");
         } else {
           setError("Something went wrong. Please try again.");
         }
@@ -87,7 +108,7 @@ export default function ProfileScreen() {
       <Input
         className="mt-1"
         value={name}
-        onChangeText={setName}
+        onChangeText={handleNameChange}
         onBlur={() => setNameTouched(true)}
         editable={!submitting}
         accessibilityLabel="Name"
@@ -100,7 +121,7 @@ export default function ProfileScreen() {
       <Input
         className="mt-1"
         value={email}
-        onChangeText={setEmail}
+        onChangeText={handleEmailChange}
         onBlur={() => setEmailTouched(true)}
         autoCapitalize="none"
         autoCorrect={false}

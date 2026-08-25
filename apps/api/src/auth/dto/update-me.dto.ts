@@ -8,7 +8,13 @@ import {
 } from 'class-validator';
 
 export class UpdateMeDto {
+  // Trim before @MinLength(1) validates — same reasoning as email below: a
+  // whitespace-only value would otherwise pass MinLength(1) and get
+  // persisted as-is (code-review finding).
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @MinLength(1)
   @MaxLength(255)

@@ -228,15 +228,23 @@ export class AuthController {
         },
       });
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        throw new ConflictException('A user with this email already exists');
-      }
-      throw error;
+      throw this.mapUniqueEmailViolation(error);
     }
 
     return { ...user, homeId: this.tenantContext.getHomeId() };
+  }
+
+  // Same P2002 -> 409 mapping UsersService/HomesService already apply for
+  // their own unique-constraint conflicts (code-review finding: keep this
+  // controller's copy as a single named helper rather than an inline check,
+  // even though the underlying check itself isn't shared cross-file today).
+  private mapUniqueEmailViolation(error: unknown): unknown {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      return new ConflictException('A user with this email already exists');
+    }
+    return error;
   }
 }

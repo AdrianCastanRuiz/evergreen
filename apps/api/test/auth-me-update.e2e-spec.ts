@@ -72,13 +72,13 @@ describe('Auth — PATCH /auth/me (e2e)', () => {
     return { id: user.id, email, accessToken };
   }
 
-  it('updates the name only, leaving email unchanged', async () => {
+  it('updates the name only (trimmed), leaving email unchanged, and rejects a whitespace-only name', async () => {
     const user = await seedFamilyUser();
 
     const res = await request(app.getHttpServer())
       .patch('/auth/me')
       .set('Authorization', `Bearer ${user.accessToken}`)
-      .send({ name: 'New Name' })
+      .send({ name: '  New Name  ' })
       .expect(200);
 
     const body = res.body as { name: string; email: string };
@@ -90,6 +90,14 @@ describe('Auth — PATCH /auth/me (e2e)', () => {
       .set('Authorization', `Bearer ${user.accessToken}`)
       .expect(200);
     expect((me.body as { name: string }).name).toBe('New Name');
+
+    // Same seeded session — reused rather than a second login, to stay
+    // under this file's shared 5/min login throttle budget (NFR10/AD-8).
+    await request(app.getHttpServer())
+      .patch('/auth/me')
+      .set('Authorization', `Bearer ${user.accessToken}`)
+      .send({ name: '   ' })
+      .expect(400);
   });
 
   it('updates the email, normalized (trimmed + lowercased)', async () => {
