@@ -106,7 +106,7 @@ export default function RequestPasswordResetScreen() {
           Email
         </RNText>
         <Input
-          className="mt-2"
+          className="mt-2 h-12 px-4"
           value={email}
           onChangeText={setEmail}
           placeholder="you@example.com"
