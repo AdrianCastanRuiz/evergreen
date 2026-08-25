@@ -1,9 +1,11 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
+  Patch,
   Post,
   Req,
   Res,
@@ -11,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { CookieOptions, Request, Response } from 'express';
-import type { Role } from '../../generated/prisma';
+import { Prisma, type Role } from '../../generated/prisma';
 import { Public } from '../common/auth/public.decorator';
 import { TenantContextService } from '../common/tenant/tenant-context.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -24,6 +26,7 @@ import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 import { PasswordResetService } from './password-reset.service';
 
 export interface MeResponse {
@@ -185,6 +188,54 @@ export class AuthController {
     // deferred-work.md) — but /me itself should never 500 on that gap, and
     // shouldn't report a deactivated account as a live session.
     if (!user || !user.isActive) throw new UnauthorizedException();
+
+    return { ...user, homeId: this.tenantContext.getHomeId() };
+  }
+
+  // Story 1.9 (FR4): any logged-in user edits their own name/email. Lives
+  // here (not UsersController, which is @Roles('super_admin')-gated) for the
+  // same reason GET /auth/me does: no @Roles() metadata means RolesGuard
+  // leaves it open to any authenticated role. `User` is not a tenant-scoped
+  // model (no RLS policy on it), so no @BypassTenantScope() is needed either.
+  @Patch('me')
+  async updateMe(@Body() dto: UpdateMeDto): Promise<MeResponse> {
+    const userId = this.tenantContext.getUserId();
+    if (!userId) throw new UnauthorizedException();
+
+    const data: Prisma.UserUpdateInput = {};
+    if (dto.name !== undefined) data.name = dto.name;
+    // DTO's @Transform already trims; double-normalize (trim + lowercase)
+    // mirrors AuthService.login/UsersService's existing convention.
+    if (dto.email !== undefined) data.email = dto.email.trim().toLowerCase();
+
+    let user: {
+      id: string;
+      email: string;
+      name: string | null;
+      role: Role;
+      isActive: boolean;
+    };
+    try {
+      user = await this.prisma.client.user.update({
+        where: { id: userId },
+        data,
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isActive: true,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('A user with this email already exists');
+      }
+      throw error;
+    }
 
     return { ...user, homeId: this.tenantContext.getHomeId() };
   }

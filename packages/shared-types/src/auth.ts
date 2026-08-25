@@ -27,6 +27,13 @@ export interface MeResponse {
   homeId: string | null;
 }
 
+// PATCH /auth/me — either field may be omitted; the endpoint updates only
+// what's provided. Response reuses MeResponse.
+export interface UpdateMeRequest {
+  name?: string;
+  email?: string;
+}
+
 // POST /auth/refresh — mints a fresh token pair from the bearer refresh token.
 export interface RefreshRequest {
   refreshToken: string;

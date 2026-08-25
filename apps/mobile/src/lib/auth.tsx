@@ -22,6 +22,10 @@ interface AuthContextValue {
   clearSessionEndReason: () => void;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Story 1.9: pushes a fresh MeResponse (e.g. PATCH /auth/me's own
+   * response) into context so every consumer (profile screen, home's
+   * greeting) reflects the change immediately, without a second round trip. */
+  updateUser: (user: MeResponse) => void;
 }
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
@@ -136,9 +140,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSessionEndReason(null);
   }, []);
 
+  const updateUser = React.useCallback((u: MeResponse) => {
+    setUser(u);
+  }, []);
+
   const value = React.useMemo(
-    () => ({ status, user, sessionEndReason, clearSessionEndReason, signIn, signOut }),
-    [status, user, sessionEndReason, clearSessionEndReason, signIn, signOut],
+    () => ({
+      status,
+      user,
+      sessionEndReason,
+      clearSessionEndReason,
+      signIn,
+      signOut,
+      updateUser,
+    }),
+    [status, user, sessionEndReason, clearSessionEndReason, signIn, signOut, updateUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

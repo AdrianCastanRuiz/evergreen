@@ -1,6 +1,7 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import type { Request, Response } from 'express';
+import { Prisma } from '../../generated/prisma';
 import { TenantContextService } from '../common/tenant/tenant-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthController } from './auth.controller';
@@ -11,6 +12,8 @@ describe('AuthController', () => {
   let controller: AuthController;
   let authService: { login: jest.Mock; refresh: jest.Mock };
   let res: { cookie: jest.Mock; clearCookie: jest.Mock };
+  let tenantContext: { getUserId: jest.Mock; getHomeId: jest.Mock };
+  let prisma: { client: { user: { update: jest.Mock } } };
 
   const tokens = { accessToken: 'access-1', refreshToken: 'refresh-1' };
   const rotatedTokens = { accessToken: 'access-2', refreshToken: 'refresh-2' };
@@ -18,13 +21,15 @@ describe('AuthController', () => {
   beforeEach(async () => {
     authService = { login: jest.fn(), refresh: jest.fn() };
     res = { cookie: jest.fn(), clearCookie: jest.fn() };
+    tenantContext = { getUserId: jest.fn(), getHomeId: jest.fn() };
+    prisma = { client: { user: { update: jest.fn() } } };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: authService },
-        { provide: TenantContextService, useValue: {} },
-        { provide: PrismaService, useValue: {} },
+        { provide: TenantContextService, useValue: tenantContext },
+        { provide: PrismaService, useValue: prisma },
         { provide: PasswordResetService, useValue: {} },
       ],
     }).compile();
@@ -113,6 +118,83 @@ describe('AuthController', () => {
       expect(res.clearCookie).toHaveBeenCalledWith('refresh_token', {
         path: '/auth',
       });
+    });
+  });
+
+  describe('updateMe', () => {
+    const updatedUser = {
+      id: 'user-1',
+      email: 'user@example.com',
+      name: 'New Name',
+      role: 'family' as const,
+      isActive: true,
+    };
+
+    it('updates only name when email is omitted', async () => {
+      tenantContext.getUserId.mockReturnValue('user-1');
+      tenantContext.getHomeId.mockReturnValue('home-1');
+      prisma.client.user.update.mockResolvedValue(updatedUser);
+
+      const result = await controller.updateMe({ name: 'New Name' });
+
+      expect(prisma.client.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { name: 'New Name' },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isActive: true,
+        },
+      });
+      expect(result).toEqual({ ...updatedUser, homeId: 'home-1' });
+    });
+
+    it('trims and lowercases the email before persisting', async () => {
+      tenantContext.getUserId.mockReturnValue('user-1');
+      tenantContext.getHomeId.mockReturnValue(null);
+      prisma.client.user.update.mockResolvedValue({
+        ...updatedUser,
+        email: 'foo@example.com',
+      });
+
+      await controller.updateMe({ email: '  Foo@Example.com  ' });
+
+      expect(prisma.client.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { email: 'foo@example.com' } }),
+      );
+    });
+
+    it('rejects with 401 before touching Prisma when there is no authenticated user', async () => {
+      tenantContext.getUserId.mockReturnValue(undefined);
+
+      await expect(
+        controller.updateMe({ name: 'New Name' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.client.user.update).not.toHaveBeenCalled();
+    });
+
+    it('maps a unique-email violation to a 409 ConflictException', async () => {
+      tenantContext.getUserId.mockReturnValue('user-1');
+      prisma.client.user.update.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('conflict', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(
+        controller.updateMe({ email: 'taken@example.com' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('rethrows any other error unchanged', async () => {
+      tenantContext.getUserId.mockReturnValue('user-1');
+      const unexpected = new Error('boom');
+      prisma.client.user.update.mockRejectedValue(unexpected);
+
+      await expect(controller.updateMe({ name: 'X' })).rejects.toBe(unexpected);
     });
   });
 });
