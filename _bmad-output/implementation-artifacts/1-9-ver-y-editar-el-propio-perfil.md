@@ -5,7 +5,7 @@ issue: 24
 
 # Story 1.9: Ver y Editar el Propio Perfil
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -215,3 +215,4 @@ claude-sonnet-5
 - 2026-08-25: Story context created (create-story) from issue #24 / epics.md Story 1.9. Status → ready-for-dev.
 - 2026-08-25: Story implemented — `PATCH /auth/me` (backend) and a new mobile profile screen with on-blur validation (ported from Story 1.14's web pattern). All 4 ACs covered; 96 unit + 31 e2e tests passing on `apps/api` (build/lint clean), `apps/mobile` typecheck/lint clean. No browser/device available in this environment — the mobile UI itself was not manually click-tested; flagged for a human/simulator pass before merge. Status → review.
 - 2026-08-25: Code review (`/code-review --fix`) — 4 fixes applied: trimmed `UpdateMeDto.name` (whitespace-only names now correctly 400), cleared stale success/error banners on further edits in `profile.tsx`, extracted the P2002→409 mapping into a named helper, added a specific inline message for a malformed email that slips past the client's looser regex. See Review Findings above. 96 unit + 31 e2e tests passing, build/lint/typecheck all re-verified clean after the fixes.
+- 2026-08-25: PR #23 merged into `develop`. Status → done.

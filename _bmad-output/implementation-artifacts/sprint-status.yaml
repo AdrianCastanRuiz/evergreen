@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-08-06
-last_updated: 2026-08-25 # 1-9 implemented, in review (issue #24)
+last_updated: 2026-08-25 # 1-9 done (PR #23 merged)
 project: evergreen
 project_key: NOKEY
 tracking_system: file-system
@@ -57,7 +57,7 @@ development_status:
   1-6-login-refresh-automatico-de-token-y-resolucion-de-splash-screen: done
   1-7-reset-de-contrasena-y-activacion-de-cuenta-invitada-via-link-de-email: done
   1-8-onboarding-familia-se-une-a-un-care-home-via-codigo-de-invitacion: backlog
-  1-9-ver-y-editar-el-propio-perfil: review # issue #24
+  1-9-ver-y-editar-el-propio-perfil: done # issue #24 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/23 (merged)
   1-10-navegacion-basada-en-rol-tras-login: backlog
   1-11-logout-y-manejo-de-expiracion-de-sesion: done # issue #19 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/21 (merged)
   1-12-home-admins-gestionan-usuarios-y-roles-de-su-home: done # issue #26 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/20 (merged)
