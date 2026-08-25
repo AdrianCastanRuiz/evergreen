@@ -1,4 +1,5 @@
 import * as React from "react";
+import { router } from "expo-router";
 import { Text, View } from "react-native";
 
 import { Button } from "@/components/ui/button";
@@ -28,8 +29,18 @@ export default function HomeScreen() {
       <Text className="mt-2 text-center text-muted-foreground">
         Role-based navigation is coming soon.
       </Text>
+      {/* Interim access point for Story 1.9's profile screen — Story 1.10
+          replaces this whole placeholder screen (and this button) with real
+          role-based navigation. */}
       <Button
-        className="mt-8"
+        className="mt-4"
+        variant="outline"
+        onPress={() => router.push("/profile")}
+      >
+        <Text>My Profile</Text>
+      </Button>
+      <Button
+        className="mt-4"
         variant="outline"
         disabled={loggingOut}
         onPress={handleLogOut}

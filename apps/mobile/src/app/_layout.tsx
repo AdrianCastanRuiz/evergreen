@@ -60,6 +60,12 @@ function RootNavigator() {
       <Stack.Protected guard={status === "authenticated" && user?.role === "family"}>
         <Stack.Screen name="onboarding" />
       </Stack.Protected>
+      {/* Story 1.9: reachable by every authenticated role, unlike home/onboarding
+          above (role-exclusive) — deliberately overlapping guard, same shape as
+          reset-password's own overlapping guard below. */}
+      <Stack.Protected guard={status === "authenticated"}>
+        <Stack.Screen name="profile" />
+      </Stack.Protected>
       <Stack.Protected guard={status === "unauthenticated"}>
         <Stack.Screen name="login" />
         <Stack.Screen name="request-password-reset" />
