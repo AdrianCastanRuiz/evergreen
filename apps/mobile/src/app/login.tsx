@@ -60,6 +60,10 @@ export default function LoginScreen() {
 
   const handleSubmit = async () => {
     if (submitting) return;
+    if (email.trim().length === 0 || password.length === 0) {
+      setError("Please enter your email and password.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
