@@ -74,7 +74,7 @@ export default function RequestPasswordResetScreen() {
             once.
           </Text>
           <Button
-            className="mt-8"
+            className="mt-8 rounded-[12px]"
             size="lg"
             onPress={() => router.replace("/login")}
           >
@@ -122,7 +122,7 @@ export default function RequestPasswordResetScreen() {
         ) : null}
 
         <Button
-          className="mt-8"
+          className="mt-8 rounded-[12px]"
           size="lg"
           disabled={submitting}
           onPress={handleSubmit}
@@ -135,7 +135,7 @@ export default function RequestPasswordResetScreen() {
         </Button>
 
         <Button
-          className="mt-4"
+          className="mt-4 rounded-[12px]"
           variant="outline"
           onPress={() => router.replace("/login")}
         >
