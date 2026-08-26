@@ -4,7 +4,7 @@ baseline_commit: 21dcae3
 
 # Story 1.8: Onboarding — familia se une a un care home vía código de invitación
 
-Status: ready-for-dev
+Status: review
 
 <!-- Alcance: FULL-STACK (diferido del pre-plan mobile-only) decidido por ask-first el 2026-08-26:
 el mecanismo de "código de invitación" NO existe en el backend (sin campo en schema, sin endpoint),
@@ -34,7 +34,7 @@ so that my pending family account is resolved and I can see my resident's photos
 
 ### Backend — schema y migración
 
-- [ ] **Schema: campos de código de invitación en `HomeMembership`** (`apps/api/prisma/schema.prisma`, migración nueva) (AC: #2):
+- [x] **Schema: campos de código de invitación en `HomeMembership`** (`apps/api/prisma/schema.prisma`, migración nueva) (AC: #2):
   - `inviteCodeHash String? @unique @map("invite_code_hash")`
   - `inviteCodeExpiresAt DateTime? @map("invite_code_expires_at")`
   - `inviteCodeUsedAt DateTime? @map("invite_code_used_at")`
@@ -43,28 +43,28 @@ so that my pending family account is resolved and I can see my resident's photos
 
 ### Backend — `InviteCodeService` (nuevo, en `apps/api/src/auth/`)
 
-- [ ] **`InviteCodeService.generateForMembership(membershipId: string): Promise<string>`** (AC: #2) — genera el código crudo (única vez que existe en claro, fuera del email), calcula su hash, guarda `inviteCodeHash` + `inviteCodeExpiresAt` en el `HomeMembership` indicado y devuelve el código crudo para el email. Reutiliza `PasswordService.hash` para guardar el hash (documentado en Dev Notes "Hash del código").
-- [ ] **`InviteCodeService.resolveInviteCode(inviteCode: string, newPassword: string): Promise<void>`** (AC: #2, #3) — valida y resuelve:
+- [x] **`InviteCodeService.generateForMembership(membershipId: string): Promise<string>`** (AC: #2) — genera el código crudo (única vez que existe en claro, fuera del email), calcula su hash, guarda `inviteCodeHash` + `inviteCodeExpiresAt` en el `HomeMembership` indicado y devuelve el código crudo para el email. Reutiliza `PasswordService.hash` para guardar el hash (documentado en Dev Notes "Hash del código").
+- [x] **`InviteCodeService.resolveInviteCode(inviteCode: string, newPassword: string): Promise<void>`** (AC: #2, #3) — valida y resuelve:
   - Hash del código, `HomeMembership.findFirst({ where: { inviteCodeHash, inviteCodeUsedAt: null, inviteCodeExpiresAt: { gt: now } }, include: { user: true } })`. Si no hay match → `BadRequestException('That invite code isn\'t valid — check with the home for a new one')` (mismo mensaje para unknown/expired/used — sin oracle, UX-DR24, replica NFR9).
   - Validación defensiva: `membership.user.isActive === false` y `role === 'family'`; si no cumple (código de una membership ya activa, o rol no-family) → mismo `BadRequestException`. No debería ocurrir vía flujo normal pero no debe abrir un bypass.
   - Hash de la nueva password, luego en `$transaction`: **claim atómico** del código con `updateMany({ where: { id: membership.id, inviteCodeUsedAt: null, inviteCodeExpiresAt: { gt: now } }, data: { inviteCodeUsedAt: now } })` — si `count === 0` (concurrencia ya lo consumió) → `BadRequestException` (mismo patrón de `PasswordResetService.confirmReset`); luego `user.update({ passwordHash, isActive: true })`.
   - No devuelve token pair (frontera congelada, igual que `confirm-password-reset`).
-- [ ] **HTTP endpoint `POST /auth/onboarding/confirm`** en `AuthController` (AC: #2, #3):
+- [x] **HTTP endpoint `POST /auth/onboarding/confirm`** en `AuthController` (AC: #2, #3):
   - `@Public()`, `@Throttle({ default: { limit: 10, ttl: 60_000 } })` (mismo límite que `confirm-password-reset`, NFR10), `@HttpCode(HttpStatus.OK)`, devuelve `{ success: true }`.
   - **`@BypassTenantScope()`** — este request es `@Public()` sin JWT, así que no hay tenant context y RLS bloquearía cualquier read/write en `home_memberships` (ver Dev Notes RLS).
   - Nuevo DTO `apps/api/src/auth/dto/confirm-onboarding.dto.ts`: `inviteCode` (string, trim, 1..64) + `newPassword` (mismas cotas que `ConfirmPasswordResetDto`: `@MinLength(8) @MaxLength(128) @Matches(/\S/)`).
-- [ ] **shared-types** (`packages/shared-types/src/auth.ts`, AD-2): `OnboardingConfirmRequest { inviteCode: string; newPassword: string }` y comentario de que responde `{ success: true }`.
+- [x] **shared-types** (`packages/shared-types/src/auth.ts`, AD-2): `OnboardingConfirmRequest { inviteCode: string; newPassword: string }` y comentario de que responde `{ success: true }`.
 
 ### Backend — integrar generación en el invite de family (Story 1.5)
 
-- [ ] **`UsersService.inviteUser` — rama de family-nuevo (AC #3)** (`apps/api/src/users/users.service.ts`): tras crear el `User` pendiente + `HomeMembership` (con el rollback secuencial existente), generar el código con `InviteCodeService.generateForMembership(membership.id)` y enviar `MailService.sendFamilyInviteEmail(email, rawCode, homeName)` en vez de `issueActivationToken` + `sendAccountInviteEmail`.
+- [x] **`UsersService.inviteUser` — rama de family-nuevo (AC #3)** (`apps/api/src/users/users.service.ts`): tras crear el `User` pendiente + `HomeMembership` (con el rollback secuencial existente), generar el código con `InviteCodeService.generateForMembership(membership.id)` y enviar `MailService.sendFamilyInviteEmail(email, rawCode, homeName)` en vez de `issueActivationToken` + `sendAccountInviteEmail`.
   - Solo aplica a la rama de family NUEVO (isActive=false, sin password). La rama de family EXISTENTE activo ganando un segundo home (AC #4) se mantiene en `sendHomeAccessAddedEmail` (sin código: ya tiene password). Los invites de staff/admin (targetRole no-family) se mantienen en `issueActivationToken` + `sendAccountInviteEmail` (sin código). NO alterar el rol no-family — estrictamente single-home (AD-1/AD-18).
   - El rollback por fallo de writes/token debe extenderse para cubrir también el fallo del `InviteCodeService` (beta `rollbackHomeMembership` ya existe en Story 1.5).
-- [ ] **`MailService.sendFamilyInviteEmail(email, inviteCode, homeName)`** (`apps/api/src/notifications/mail.service.ts`) + `buildFamilyInviteHtml(inviteCode, homeName)` (AC: #2): copy nuevo que muestra el CÓDIGO en claro y dice que abra la app y lo ingrese (FR5). `homeName` por `escapeHtml` (precedente inyección, Story 1.3/1.5). Usa el plumbing `attemptSend`/retry compartido.
+- [x] **`MailService.sendFamilyInviteEmail(email, inviteCode, homeName)`** (`apps/api/src/notifications/mail.service.ts`) + `buildFamilyInviteHtml(inviteCode, homeName)` (AC: #2): copy nuevo que muestra el CÓDIGO en claro y dice que abra la app y lo ingrese (FR5). `homeName` por `escapeHtml` (precedente inyección, Story 1.3/1.5). Usa el plumbing `attemptSend`/retry compartido.
 
 ### Mobile — pantalla de onboarding
 
-- [ ] **Reescribir `apps/mobile/src/app/onboarding.tsx`** (AC: #1, #2, #3) como flujo real de código de invitación + set password:
+- [x] **Reescribir `apps/mobile/src/app/onboarding.tsx`** (AC: #1, #2, #3) como flujo real de código de invitación + set password:
   - Formulario de un paso: input de código de invitación + `PasswordInput` (nueva password) + `PasswordInput` (confirmar) + botón primario. Patrón visual y de validación de `reset-password.tsx`/`login.tsx`.
   - Prefill del código desde deep link: `useLocalSearchParams<{ code?: string }>()` → si viene `?code=...` en la URL (email) se precarga el campo.
   - Submit → `request<{ success: true }>("/auth/onboarding/confirm", { method: "POST", body: { inviteCode, newPassword } })`. En éxito → `router.replace({ pathname: "/login", params: { reset: "success" } })` (frontera congelada: el endpoint no devuelve token pair; el family inicia sesión con la nueva password y aterriza en `(tabs)`).
@@ -73,13 +73,13 @@ so that my pending family account is resolved and I can see my resident's photos
 
 ### Mobile — reconciliación de navegación (ask-first resuelta en esta story)
 
-- [ ] **Hacer `onboarding` alcanzable SIN sesión** (`apps/mobile/src/app/_layout.tsx`) (AC: #1): mover el `Stack.Protected` de `onboarding` del guard `status === "authenticated" && role === "family"` al grupo `status === "unauthenticated"` (junto a `login`/`request-password-reset`). Un family pendiente NO tiene sesión (no puede autenticarse sin password aún), así que el onboarding debe ser alcanzable deslogueado. Mantener el orden de declaración que preserva el anchor: `(tabs)` sigue declarado ANTES, por lo que un family ya autenticado sigue aterrizando en `(tabs)`, no en onboarding (no romper la decisión Story 1.10).
-- [ ] **Link "Have an invite code?"** en `login.tsx` (AC: #1): botón outline (mismo patrón que "Forgot your password?") que hace `router.push("/onboarding")`, para que un family invitado sin email-deep-link encuentre el onboarding. No altera el flujo de login normal.
+- [x] **Hacer `onboarding` alcanzable SIN sesión** (`apps/mobile/src/app/_layout.tsx`) (AC: #1): mover el `Stack.Protected` de `onboarding` del guard `status === "authenticated" && role === "family"` al grupo `status === "unauthenticated"` (junto a `login`/`request-password-reset`). Un family pendiente NO tiene sesión (no puede autenticarse sin password aún), así que el onboarding debe ser alcanzable deslogueado. Mantener el orden de declaración que preserva el anchor: `(tabs)` sigue declarado ANTES, por lo que un family ya autenticado sigue aterrizando en `(tabs)`, no en onboarding (no romper la decisión Story 1.10).
+- [x] **Link "Have an invite code?"** en `login.tsx` (AC: #1): botón outline (mismo patrón que "Forgot your password?") que hace `router.push("/onboarding")`, para que un family invitado sin email-deep-link encuentre el onboarding. No altera el flujo de login normal.
 
 ### Verification
 
-- [ ] Backend: `pnpm --filter @evergreen/api run build|lint|test` + `test:e2e` contra Postgres local (barra de Stories 1.3/1.4/1.5).
-- [ ] Mobile: `pnpm --filter @evergreen/mobile run typecheck` + `pnpm exec eslint .` + `expo export` (build).
+- [x] Backend: `pnpm --filter @evergreen/api run build|lint|test` + `test:e2e` contra Postgres local (barra de Stories 1.3/1.4/1.5).
+- [x] Mobile: `pnpm --filter @evergreen/mobile run typecheck` + `pnpm exec eslint .` + `expo export` (build).
 
 ## Dev Notes
 
@@ -140,12 +140,46 @@ deepseek-v4-flash (opencode)
 
 ### Debug Log References
 
-- (pendiente de implementación — dev-story)
+- `npx prisma migrate deploy` (apps/api) — migración `20260826120000_add_home_membership_invite_code` aplicada (también aplicó localmente `20260820120000_fix_rls_empty_current_home_id`, que el DB local no tenía).
+- `npx tsc --noEmit` (api) — clean; `pnpm run build` (nest build) — clean.
+- `npx jest` (api) — 106 unit tests, 8 suites, todos en verde.
+- `npx jest --config ./test/jest-e2e.json --runInBand --testTimeout=20000` (api) — 34 tests / 8 suites, todos en verde, incl. el nuevo `onboarding.e2e-spec.ts` (3 tests: happy path resuelve cuenta y permite login, código inválido → 400, reuso → 400).
+  - Nota de infraestructura: ejecutar las 8 suites e2e en paralelo en un solo proceso Jest hace flakear `users-manage-home` (timeout/WASM "Transaction not found" en `auth.service.ts resolveFixedHomeId`, patrón lazy-promise en `runBypassed` documentado en Story 1.3/1.6). En serie pasan todas; fuera del alcance de esta story.
+- `npx eslint "src/**/*.ts" "test/**/*.ts"` (api) — clean tras `--fix` + arreglos de unused vars.
+- Mobile (`apps/mobile`): `npx tsc --noEmit` clean, `npx eslint .` clean, `npx expo export --platform web` ok (exporta `/onboarding`; tarda ~4 min en esta shell Windows, no bloquea CI porque mobile no está en CI).
 
 ### Completion Notes List
 
-- (pendiente)
+- **Backend full-stack del código de invitación (FR5)**: `HomeMembership` gana `inviteCodeHash` (unique), `inviteCodeExpiresAt`, `inviteCodeUsedAt` (migración aditiva). Nuevo `InviteCodeService` (generación de código humano-tipable de 10 chars con alfabeto desambiguado + resolución con claim atómico single-use en transacción). El endpoint `POST /auth/onboarding/confirm` (Public, throttled 10/min) resuelve la cuenta family pendiente y fija password; **no** devuelve token pair (frontera congelada → el family inicia sesión con la nueva password).
+- **RLS descubierto en implementación (corregido)**: el interceptor `@BypassTenantScope()` solo honra `super_admin` (AD-1 rule 5) — no sirve para una ruta pública sin sesión. La resolución usa `TenantContextService.runBypassed()` dentro del servicio (el middleware siempre crea un store, incluso en rutas públicas). Seguro: resolución por código de alta entropía + throttle, sin enumeración.
+- **Story 1.5 integrada**: la rama de family NUEVO de `UsersService.inviteUser` ahora genera el código de invitación y envía `sendFamilyInviteEmail` (el código en claro va SOLO en el email); staff/admin mantienen el token/link de `sendAccountInviteEmail`; family existente activo mantiene `sendHomeAccessAddedEmail`. El rollback se extendió para cubrir el fallo de generación del código.
+- **Mobile**: `onboarding.tsx` reescrito como flujo real (invite code + password + confirm, error inline de campo UX-DR24, prefill `?code=`, navega a login tras éxito). Onboarding movido al guard `unauthenticated` para que un family pendiente sin sesión pueda entrar (vía link "Have an invite code?" en login o deep link), preservando el anchor de family → `(tabs)` declarado antes.
+- **Diferidos a Epic 2 (ask-first 2026-08-26)**: resident-switcher (UX-DR9) y gate "no residents → invite-code" (UX-DR23) — dependen de datos de residentes vinculados inexistentes. Family sigue aterrizando en `(tabs)` (Story 1.10).
 
 ### File List
 
-- (pendiente)
+**Backend:**
+- `apps/api/prisma/schema.prisma` (migración nueva: campos de código en HomeMembership)
+- `apps/api/prisma/migrations/20260826120000_add_home_membership_invite_code/migration.sql` (nuevo)
+- `apps/api/src/auth/invite-code.service.ts` (nuevo)
+- `apps/api/src/auth/invite-code.service.spec.ts` (nuevo)
+- `apps/api/src/auth/dto/confirm-onboarding.dto.ts` (nuevo)
+- `apps/api/src/auth/auth.module.ts` (registra/exporta InviteCodeService)
+- `apps/api/src/auth/auth.controller.ts` (`POST /auth/onboarding/confirm`)
+- `apps/api/src/auth/auth.controller.spec.ts` (mock de InviteCodeService)
+- `apps/api/src/users/users.service.ts` (rama family-nuevo genera código + email; rollback extendido)
+- `apps/api/src/users/users.service.spec.ts` (tests family-nuevo actualizados/nuevos)
+- `apps/api/src/notifications/mail.service.ts` (`sendFamilyInviteEmail` + `buildFamilyInviteHtml`)
+- `apps/api/src/notifications/mail.service.spec.ts` (cobertura `sendFamilyInviteEmail`)
+- `apps/api/test/onboarding.e2e-spec.ts` (nuevo)
+- `packages/shared-types/src/auth.ts` (`OnboardingConfirmRequest`)
+
+**Mobile:**
+- `apps/mobile/src/app/onboarding.tsx` (reescrito: flujo invite-code + set password)
+- `apps/mobile/src/app/_layout.tsx` (guard de onboarding → unauthenticated)
+- `apps/mobile/src/app/login.tsx` (link "Have an invite code?")
+
+## Change Log
+
+- 2026-08-26: Story creada full-stack (ask-first) — el mecanismo de código de invitación no existía en backend. Status → ready-for-dev. (create-story)
+- 2026-08-26: Implementación completa — migración `add_home_membership_invite_code`, `InviteCodeService`, endpoint público `POST /auth/onboarding/confirm` (resolución single-use + set password), `sendFamilyInviteEmail` con el código, integración en la rama family-nuevo de `inviteUser` (Story 1.5). Mobile: onboarding reescrito + guard `unauthenticated` + link en login. RLS resuelto vía `runBypassed` (el interceptor solo honra super_admin). 106 unit + 34 e2e verdes; mobile typecheck/lint/build verdes. Status → review.

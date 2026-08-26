@@ -66,23 +66,23 @@ function RootNavigator() {
       <Stack.Protected guard={status === "authenticated" && user?.role !== "family"}>
         <Stack.Screen name="home" />
       </Stack.Protected>
-      {/* Family onboarding (Story 1.8 anchor). Must NOT be declared before the
-          (tabs) guard above: expo-router redirects to the FIRST available
-          screen (the anchor) whenever the current guard turns false, so the
-          declaration order — (tabs) first — is what keeps family landing on
-          the tab bar, not onboarding. This guard stays family-only so the
-          route is never reachable unauthenticated. */}
-      <Stack.Protected guard={status === "authenticated" && user?.role === "family"}>
-        <Stack.Screen name="onboarding" />
-      </Stack.Protected>
       {/* Profile (Story 1.9, FR4) is reachable by any authenticated user,
           regardless of role. */}
       <Stack.Protected guard={status === "authenticated"}>
         <Stack.Screen name="profile" />
       </Stack.Protected>
+      {/* Unauthenticated anchor is login (declared first). onboarding is a
+          public invite-code flow (Story 1.8, FR5): a pending family member has
+          NO session (they can't authenticate until they set a password), so it
+          must be reachable logged out — via the login screen's "Have an invite
+          code?" link or the emailed deep link (?code=...). It MUST stay
+          declared after (tabs): expo-router redirects to the first available
+          screen, so an already-authenticated family keeps landing on tabs, not
+          here. */}
       <Stack.Protected guard={status === "unauthenticated"}>
         <Stack.Screen name="login" />
         <Stack.Screen name="request-password-reset" />
+        <Stack.Screen name="onboarding" />
       </Stack.Protected>
       {/* reset-password must stay reachable while "resolving" so a cold-start
           deep link from the emailed reset URL lands here before /auth/me

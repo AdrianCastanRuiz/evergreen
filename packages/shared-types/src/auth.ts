@@ -51,3 +51,12 @@ export interface ConfirmPasswordResetRequest {
   token: string;
   newPassword: string;
 }
+
+// POST /auth/onboarding/confirm (Story 1.8, FR5) — resolves a pending family
+// account from its invite code + new password. Returns { success: true },
+// never a token pair; the client navigates to login after a successful
+// confirm (same frozen boundary as confirm-password-reset).
+export interface OnboardingConfirmRequest {
+  inviteCode: string;
+  newPassword: string;
+}

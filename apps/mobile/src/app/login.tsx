@@ -202,6 +202,18 @@ export default function LoginScreen() {
         >
           <Text className="text-[#AE5B4F]">Forgot your password?</Text>
         </Button>
+
+        {/* Story 1.8 (FR5): a pending family member invited by email has no
+            session yet, so onboarding (invite code + set password) must be
+            reachable from here, logged out. */}
+        <Button
+          className="mt-3 w-full rounded-[12px]"
+          variant="outline"
+          disabled={submitting}
+          onPress={() => router.push("/onboarding")}
+        >
+          <Text>Have an invite code?</Text>
+        </Button>
       </ScrollView>
     </KeyboardAvoidingView>
   );

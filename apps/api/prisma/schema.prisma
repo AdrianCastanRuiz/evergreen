@@ -101,6 +101,19 @@ model HomeMembership {
   role      Role
   createdAt DateTime @default(now()) @map("created_at")
 
+  // Story 1.8 invite-code onboarding (FR5): an invite code lets a pending
+  // family member resolve their account by typing the code into the app and
+  // setting a password, instead of following the emailed activation link.
+  // One code per HomeMembership (AD-18: a family user may join several
+  // homes, each with its own code). Only ever populated for a still-pending
+  // family membership's invite; staff/admin and already-active family
+  // memberships carry nulls. Only the hash is stored (the raw code exists
+  // solely in the invite email); hashed deterministically so the endpoint
+  // can look up by code, and consumed atomically once via inviteCodeUsedAt.
+  inviteCodeHash      String?   @unique @map("invite_code_hash")
+  inviteCodeExpiresAt DateTime? @map("invite_code_expires_at")
+  inviteCodeUsedAt    DateTime? @map("invite_code_used_at")
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   home Home @relation(fields: [homeId], references: [id], onDelete: Cascade)
 
