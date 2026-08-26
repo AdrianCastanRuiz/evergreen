@@ -4,7 +4,7 @@ baseline_commit: 21dcae3
 
 # Story 1.8: Onboarding — familia se une a un care home vía código de invitación
 
-Status: review
+Status: done
 
 <!-- Alcance: FULL-STACK (diferido del pre-plan mobile-only) decidido por ask-first el 2026-08-26:
 el mecanismo de "código de invitación" NO existe en el backend (sin campo en schema, sin endpoint),
