@@ -1,4 +1,5 @@
 import * as React from "react";
+import { router } from "expo-router";
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,15 @@ export default function StaffScreen() {
       title={user?.name ?? "Welcome"}
       body="Photo upload is coming soon."
     >
+      {/* Staff/re non-family must keep a way to their own profile (FR4, Story
+          1.9) — without this they never reach onboarding to reach /profile. */}
+      <Button
+        variant="outline"
+        disabled={loggingOut}
+        onPress={() => router.push("/profile")}
+      >
+        <Text>My Profile</Text>
+      </Button>
       <Button variant="outline" disabled={loggingOut} onPress={handleLogOut}>
         <Text>Log out</Text>
       </Button>

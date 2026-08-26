@@ -66,8 +66,12 @@ function RootNavigator() {
       <Stack.Protected guard={status === "authenticated" && user?.role !== "family"}>
         <Stack.Screen name="home" />
       </Stack.Protected>
-      {/* Family onboarding (Story 1.8 anchor; kept reachable, family currently
-          routes to (tabs) by order of the guards above). */}
+      {/* Family onboarding (Story 1.8 anchor). Must NOT be declared before the
+          (tabs) guard above: expo-router redirects to the FIRST available
+          screen (the anchor) whenever the current guard turns false, so the
+          declaration order — (tabs) first — is what keeps family landing on
+          the tab bar, not onboarding. This guard stays family-only so the
+          route is never reachable unauthenticated. */}
       <Stack.Protected guard={status === "authenticated" && user?.role === "family"}>
         <Stack.Screen name="onboarding" />
       </Stack.Protected>
