@@ -1,13 +1,17 @@
 import * as React from "react";
 import { router } from "expo-router";
-import { Text, View } from "react-native";
 
+import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/auth";
 
-// Role-appropriate home target of the splash resolution (FR8). Story 1.10
-// replaces this placeholder with real role-based navigation.
-export default function HomeScreen() {
+// Staff (and non-family) single-screen landing — Story 1.10 AC #2. Staff see
+// ONLY the single-screen photo-upload flow and NO tab bar. The functional
+// upload surface is Story 4.1 (Epic 4); this establishes the role-scoped
+// single screen. Admin/super_admin keep this screen too on mobile (they have
+// no dedicated mobile face in this story; the portal is their home surface).
+export default function StaffScreen() {
   const { user, signOut } = useAuth();
   const [loggingOut, setLoggingOut] = React.useState(false);
 
@@ -22,31 +26,22 @@ export default function HomeScreen() {
   };
 
   return (
-    <View className="flex-1 items-center justify-center bg-background px-gutter">
-      <Text className="font-heading text-2xl text-foreground">
-        {user?.name ?? "Welcome"}
-      </Text>
-      <Text className="mt-2 text-center text-muted-foreground">
-        Role-based navigation is coming soon.
-      </Text>
-      {/* Interim access point for Story 1.9's profile screen — Story 1.10
-          replaces this whole placeholder screen (and this button) with real
-          role-based navigation. */}
+    <EmptyState
+      title={user?.name ?? "Welcome"}
+      body="Photo upload is coming soon."
+    >
+      {/* Staff/re non-family must keep a way to their own profile (FR4, Story
+          1.9) — without this they never reach onboarding to reach /profile. */}
       <Button
-        className="mt-4"
         variant="outline"
+        disabled={loggingOut}
         onPress={() => router.push("/profile")}
       >
         <Text>My Profile</Text>
       </Button>
-      <Button
-        className="mt-4"
-        variant="outline"
-        disabled={loggingOut}
-        onPress={handleLogOut}
-      >
+      <Button variant="outline" disabled={loggingOut} onPress={handleLogOut}>
         <Text>Log out</Text>
       </Button>
-    </View>
+    </EmptyState>
   );
 }
