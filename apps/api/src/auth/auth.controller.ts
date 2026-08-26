@@ -22,11 +22,13 @@ import {
   REFRESH_TOKEN_TTL_MS,
   type TokenPair,
 } from './auth.service';
+import { ConfirmOnboardingDto } from './dto/confirm-onboarding.dto';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
+import { InviteCodeService } from './invite-code.service';
 import { PasswordResetService } from './password-reset.service';
 
 export interface MeResponse {
@@ -63,6 +65,7 @@ export class AuthController {
     private readonly tenantContext: TenantContextService,
     private readonly prisma: PrismaService,
     private readonly passwordResetService: PasswordResetService,
+    private readonly inviteCodeService: InviteCodeService,
   ) {}
 
   // NFR10/AD-8: tighter than the global default — 5 attempts/minute.
@@ -145,6 +148,29 @@ export class AuthController {
     @Body() dto: ConfirmPasswordResetDto,
   ): Promise<{ success: true }> {
     await this.passwordResetService.confirmReset(dto.token, dto.newPassword);
+    return { success: true };
+  }
+
+  // Story 1.8 (FR5): a pending family member resolves their account by
+  // typing their invite code into the app and setting a password. Public
+  // (they have no session yet) and throttled like confirm-password-reset.
+  // Tenant-scoped reads/writes inside resolveInviteCode run under
+  // TenantContextService.runBypassed() (the interceptor-backed
+  // @BypassTenantScope() can't be used: it only honors super_admin, but there
+  // is no session here — safe, since resolution is by opaque high-entropy
+  // code with no enumeration surface). Never returns a token pair — the
+  // client navigates to login so the user signs in with the new password.
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('onboarding/confirm')
+  @HttpCode(HttpStatus.OK)
+  async confirmOnboarding(
+    @Body() dto: ConfirmOnboardingDto,
+  ): Promise<{ success: true }> {
+    await this.inviteCodeService.resolveInviteCode(
+      dto.inviteCode,
+      dto.newPassword,
+    );
     return { success: true };
   }
 

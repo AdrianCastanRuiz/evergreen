@@ -6,6 +6,7 @@ import {
 import { Test, TestingModule } from '@nestjs/testing';
 import * as Sentry from '@sentry/nestjs';
 import { Prisma } from '../../generated/prisma';
+import { InviteCodeService } from '../auth/invite-code.service';
 import { PasswordResetService } from '../auth/password-reset.service';
 import { TenantContextService } from '../common/tenant/tenant-context.service';
 import { MailService } from '../notifications/mail.service';
@@ -39,7 +40,9 @@ describe('UsersService', () => {
     sendAccountInviteEmail: jest.Mock;
     sendSuperAdminInviteEmail: jest.Mock;
     sendHomeAccessAddedEmail: jest.Mock;
+    sendFamilyInviteEmail: jest.Mock;
   };
+  let inviteCodeService: { generateForMembership: jest.Mock };
   let tenantContext: { runBypassed: jest.Mock };
 
   const pendingUser = {
@@ -91,7 +94,9 @@ describe('UsersService', () => {
       sendAccountInviteEmail: jest.fn().mockResolvedValue(undefined),
       sendSuperAdminInviteEmail: jest.fn().mockResolvedValue(undefined),
       sendHomeAccessAddedEmail: jest.fn().mockResolvedValue(undefined),
+      sendFamilyInviteEmail: jest.fn().mockResolvedValue(undefined),
     };
+    inviteCodeService = { generateForMembership: jest.fn() };
     // runBypassed just runs the callback for these tests — the mock Prisma
     // client isn't tenant-scoping-aware, so there's no real bypass branch to
     // exercise; only that UsersService calls through it (not a plain
@@ -106,6 +111,7 @@ describe('UsersService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: PasswordResetService, useValue: passwordResetService },
         { provide: MailService, useValue: mailService },
+        { provide: InviteCodeService, useValue: inviteCodeService },
         { provide: TenantContextService, useValue: tenantContext },
       ],
     }).compile();
@@ -355,6 +361,7 @@ describe('UsersService', () => {
       });
       expect(prisma.client.homeMembership.create).toHaveBeenCalledWith({
         data: { userId: 'user-3', homeId: 'home-1', role: 'staff' },
+        select: { id: true },
       });
       expect(passwordResetService.issueActivationToken).toHaveBeenCalledWith(
         'user-3',
@@ -368,10 +375,13 @@ describe('UsersService', () => {
       expect(result).toEqual({ ...pendingStaff, homeId: 'home-1' });
     });
 
-    it('creates a pending family User and a HomeMembership (AC #3)', async () => {
+    it('creates a pending family User + HomeMembership, generates an invite code, and emails the family invite (AC #3)', async () => {
       prisma.client.user.findUnique.mockResolvedValue(null);
       prisma.client.user.create.mockResolvedValue(pendingFamily);
-      passwordResetService.issueActivationToken.mockResolvedValue('raw-token');
+      prisma.client.homeMembership.create.mockResolvedValue({
+        id: 'membership-family',
+      });
+      inviteCodeService.generateForMembership.mockResolvedValue('ABCDEFGHJK');
 
       const result = await usersService.inviteUser(
         'staff',
@@ -391,8 +401,46 @@ describe('UsersService', () => {
       });
       expect(prisma.client.homeMembership.create).toHaveBeenCalledWith({
         data: { userId: 'user-4', homeId: 'home-1', role: 'family' },
+        select: { id: true },
       });
+      // Story 1.8: a NEW family member gets an invite code (not an
+      // activation link/token) — FR5's invite-code onboarding path.
+      expect(inviteCodeService.generateForMembership).toHaveBeenCalledWith(
+        'membership-family',
+      );
+      expect(passwordResetService.issueActivationToken).not.toHaveBeenCalled();
+      expect(mailService.sendFamilyInviteEmail).toHaveBeenCalledWith(
+        'family@evergreen.test',
+        'ABCDEFGHJK',
+        'Evergreen Oaks',
+      );
+      expect(mailService.sendAccountInviteEmail).not.toHaveBeenCalled();
       expect(result).toEqual({ ...pendingFamily, homeId: 'home-1' });
+    });
+
+    it('rolls back the orphaned pending User when invite-code generation fails for a new family invite', async () => {
+      prisma.client.user.findUnique.mockResolvedValue(null);
+      prisma.client.user.create.mockResolvedValue(pendingFamily);
+      prisma.client.homeMembership.create.mockResolvedValue({
+        id: 'membership-family',
+      });
+      const codeError = new Error('invite code write failed');
+      inviteCodeService.generateForMembership.mockRejectedValue(codeError);
+
+      await expect(
+        usersService.inviteUser(
+          'staff',
+          'home-1',
+          'Evergreen Oaks',
+          pendingFamily.email,
+          'family',
+        ),
+      ).rejects.toBe(codeError);
+
+      expect(prisma.client.user.delete).toHaveBeenCalledWith({
+        where: { id: 'user-4' },
+      });
+      expect(mailService.sendFamilyInviteEmail).not.toHaveBeenCalled();
     });
 
     it('rejects inviting an existing non-family user from another home as staff (AC #2)', async () => {

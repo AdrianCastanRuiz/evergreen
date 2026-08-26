@@ -6,6 +6,7 @@ import { TenantContextService } from '../common/tenant/tenant-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { InviteCodeService } from './invite-code.service';
 import { PasswordResetService } from './password-reset.service';
 
 describe('AuthController', () => {
@@ -31,6 +32,10 @@ describe('AuthController', () => {
         { provide: TenantContextService, useValue: tenantContext },
         { provide: PrismaService, useValue: prisma },
         { provide: PasswordResetService, useValue: {} },
+        {
+          provide: InviteCodeService,
+          useValue: { resolveInviteCode: jest.fn() },
+        },
       ],
     }).compile();
 

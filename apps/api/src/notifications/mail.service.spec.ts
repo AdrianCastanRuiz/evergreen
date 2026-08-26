@@ -301,4 +301,59 @@ describe('MailService', () => {
       expect(Sentry.captureException).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('sendFamilyInviteEmail', () => {
+    it('emails the family the raw invite code in clear (no activation link)', async () => {
+      sendMock.mockResolvedValue({ data: { id: 'email-1' }, error: null });
+      const mailService = await buildService('re_test_key');
+
+      await mailService.sendFamilyInviteEmail(
+        'family@b.com',
+        'ABCDEFGHJK',
+        'Sunny Meadows',
+      );
+
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      const [sendArgs] = sendMock.mock.calls[0] as [
+        { to: string; from: string; subject: string; html: string },
+      ];
+      expect(sendArgs.to).toBe('family@b.com');
+      expect(sendArgs.subject).toBe(
+        "You've been invited to join a loved one's care home on Evergreen",
+      );
+      expect(sendArgs.html).toContain('ABCDEFGHJK');
+      expect(sendArgs.html).toContain('Sunny Meadows');
+      expect(sendArgs.html).not.toContain('reset-password?token=');
+    });
+
+    it('no-ops when RESEND_API_KEY is unset', async () => {
+      const mailService = await buildService('');
+
+      await mailService.sendFamilyInviteEmail(
+        'family@b.com',
+        'ABCDEFGHJK',
+        'Sunny Meadows',
+      );
+
+      expect(sendMock).not.toHaveBeenCalled();
+    });
+
+    it('HTML-escapes a malicious home name but not the server-generated code', async () => {
+      sendMock.mockResolvedValue({ data: { id: 'email-1' }, error: null });
+      const mailService = await buildService('re_test_key');
+
+      await mailService.sendFamilyInviteEmail(
+        'family@b.com',
+        'ABCDEFGHJK',
+        'Oaks <img src=x onerror=alert(1)> & "Sons"',
+      );
+
+      const [sendArgs] = sendMock.mock.calls[0] as [{ html: string }];
+      expect(sendArgs.html).not.toContain('<img');
+      expect(sendArgs.html).toContain(
+        'Oaks &lt;img src=x onerror=alert(1)&gt; &amp; &quot;Sons&quot;',
+      );
+      expect(sendArgs.html).toContain('ABCDEFGHJK');
+    });
+  });
 });

@@ -8,6 +8,7 @@ import {
 import * as Sentry from '@sentry/nestjs';
 import type { Role } from '../../generated/prisma';
 import { Prisma } from '../../generated/prisma';
+import { InviteCodeService } from '../auth/invite-code.service';
 import { PasswordResetService } from '../auth/password-reset.service';
 import { TenantContextService } from '../common/tenant/tenant-context.service';
 import { MailService } from '../notifications/mail.service';
@@ -60,6 +61,7 @@ export class UsersService {
     private readonly passwordResetService: PasswordResetService,
     private readonly mailService: MailService,
     private readonly tenantContext: TenantContextService,
+    private readonly inviteCodeService: InviteCodeService,
   ) {}
 
   // Story 1.3: super_admin invites a home admin for `homeId`. Creates a
@@ -184,28 +186,44 @@ export class UsersService {
 
     const user = await this.createUser(normalizedEmail, targetRole);
 
-    let rawToken: string;
+    // Story 1.8: a NEW family member (FR5) resolves their pending account by
+    // typing an invite code into the app and setting a password there —
+    // instead of following an emailed activation link (rawToken). Staff and
+    // admin invites keep the token/link path. `.select({ id })` only trims
+    // the create's return; the tenant extension still auto-injects homeId.
+    let rawInviteCode: string | undefined;
+    let rawToken: string | undefined;
     try {
-      // `homeId` here is required by Prisma's generated type (no default
-      // on the column) but is NOT actually what determines the row's
-      // home_id: this is the non-bypass auto-inject path, and the
-      // tenant-scoping extension always overwrites it with the request
-      // context's own homeId last (tenant-scoping.extension.ts's
-      // injectHomeId spreads its value after the caller's data). The two
-      // values are guaranteed equal today (both derive from the same
-      // context), so this field is effectively inert — code-review finding.
-      await this.prisma.client.homeMembership.create({
+      const membership = await this.prisma.client.homeMembership.create({
         data: { userId: user.id, homeId: actorHomeId, role: targetRole },
+        select: { id: true },
       });
-      rawToken = await this.passwordResetService.issueActivationToken(user.id);
+      if (targetRole === 'family') {
+        rawInviteCode = await this.inviteCodeService.generateForMembership(
+          membership.id,
+        );
+      } else {
+        rawToken = await this.passwordResetService.issueActivationToken(
+          user.id,
+        );
+      }
     } catch (error) {
+      // Covers a failure in the membership create, the code/token issuance,
+      // OR the invite-code write — any of which would otherwise leave a
+      // committed pending User with no way to ever resolve the invite.
       await this.rollbackPendingUser(user.id, error);
       throw error;
     }
 
-    this.mailService
-      .sendAccountInviteEmail(normalizedEmail, rawToken, homeName)
-      .catch(() => {});
+    if (rawInviteCode) {
+      this.mailService
+        .sendFamilyInviteEmail(normalizedEmail, rawInviteCode, homeName)
+        .catch(() => {});
+    } else {
+      this.mailService
+        .sendAccountInviteEmail(normalizedEmail, rawToken!, homeName)
+        .catch(() => {});
+    }
 
     return { ...user, homeId: actorHomeId };
   }

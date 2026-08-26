@@ -101,6 +101,26 @@ export class MailService {
     });
   }
 
+  // Story 1.8 (FR5): a brand-new family member is invited by a care home and
+  // resolves their pending account by typing an INVITE CODE into the app and
+  // setting a password there — not by following an emailed link (unlike
+  // child/parent-of pending staff/admin, whose set-password goes through
+  // sendAccountInviteEmail's link). The raw code lives only in this email.
+  sendFamilyInviteEmail(
+    email: string,
+    inviteCode: string,
+    homeName: string,
+  ): Promise<void> {
+    return this.attemptSend({
+      email,
+      subject:
+        "You've been invited to join a loved one's care home on Evergreen",
+      html: this.buildFamilyInviteHtml(inviteCode, homeName),
+      logLabel: 'family invite email',
+      retryCount: 0,
+    });
+  }
+
   private buildLink(rawToken: string): string {
     const link = new URL(this.resetPasswordUrl);
     link.searchParams.set('token', rawToken);
@@ -197,6 +217,20 @@ export class MailService {
     return (
       `<p>You now have access to <strong>${this.escapeHtml(homeName)}</strong> on Evergreen.</p>` +
       '<p>Log in with your existing password to switch between your homes.</p>'
+    );
+  }
+
+  // Story 1.8: family-specific invite copy — the recipient must open the
+  // Evergreen app, enter the invite code, and set their password there
+  // (FR5), so the code is shown in clear prominently. `homeName` is
+  // user-supplied, so escape it (stored-content-injection precedent); the
+  // code is generated server-side and needs no escaping.
+  private buildFamilyInviteHtml(inviteCode: string, homeName: string): string {
+    return (
+      `<p>You've been invited to follow a loved one at <strong>${this.escapeHtml(homeName)}</strong> on Evergreen.</p>` +
+      `<p>Open the Evergreen app, tap <strong>"Have an invite code?"</strong> on the sign-in screen, and enter this invite code to set your password:</p>` +
+      `<p style="font-size:18px; font-weight:bold; letter-spacing:2px;">${inviteCode}</p>` +
+      "<p>If you weren't expecting this invite, you can safely ignore this email.</p>"
     );
   }
 
