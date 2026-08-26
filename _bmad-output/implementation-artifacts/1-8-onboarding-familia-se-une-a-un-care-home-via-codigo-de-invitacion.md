@@ -183,3 +183,10 @@ deepseek-v4-flash (opencode)
 
 - 2026-08-26: Story creada full-stack (ask-first) — el mecanismo de código de invitación no existía en backend. Status → ready-for-dev. (create-story)
 - 2026-08-26: Implementación completa — migración `add_home_membership_invite_code`, `InviteCodeService`, endpoint público `POST /auth/onboarding/confirm` (resolución single-use + set password), `sendFamilyInviteEmail` con el código, integración en la rama family-nuevo de `inviteUser` (Story 1.5). Mobile: onboarding reescrito + guard `unauthenticated` + link en login. RLS resuelto vía `runBypassed` (el interceptor solo honra super_admin). 106 unit + 34 e2e verdes; mobile typecheck/lint/build verdes. Status → review.
+
+### Review Findings (code-review, 2026-08-26)
+
+- [x] [Review][Patch][Media] `InviteCodeService.resolveInviteCode` cargaba el `User` completo vía `include: { user: true }` en una ruta pública — traía `passwordHash` a memoria. No era un leak (nunca se devuelve en la respuesta), pero es superficie innecesaria en un path sin sesión. **Fixed:** `include: { user: { select: { isActive: true } } }` — la única propiedad necesaria. (Blind Hunter)
+- [x] [Review][Note][Baja] `INVITE_CODE_TTL_HOURS` queda sin documentar en `.env.example` (bloqueado por política de lectura de este entorno) ni en configs de deploy. Aceptado como follow-up; el default 168h cubre el flujo normal. (Blind Hunter)
+- [x] [Review][Note][Baja] Sin sesgo de módulo al generar el código: alfabeto de 32 caracteres y `256 % 32 === 0`, así que `randomByte % 32` es uniforme. Verificado en revisión, no un bug. (Edge Case Hunter)
+- [x] [Review][Ok][Info] La ramn de family NUEVO de `inviteUser` ahora usa `sendFamilyInviteEmail` (código) y deja de emitir `issueActivationToken`; las e2e de `users-invite` pasan sin cambios porque no asertan el método de email — sin regresión. (Acceptance Auditor)

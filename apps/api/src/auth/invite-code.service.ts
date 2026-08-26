@@ -97,7 +97,9 @@ export class InviteCodeService {
           inviteCodeUsedAt: null,
           inviteCodeExpiresAt: { gt: now },
         },
-        include: { user: true },
+        // Only isActive is needed below — never pull the full User (incl.
+        // passwordHash) into a public-touch path.
+        include: { user: { select: { isActive: true } } },
       });
       if (!membership) {
         throw new BadRequestException(INVALID_OR_EXPIRED_MESSAGE);
