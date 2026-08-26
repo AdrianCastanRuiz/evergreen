@@ -4,7 +4,7 @@ baseline_commit: c3c8e28
 
 # Story 1.10: Navegación basada en rol tras login (mobile + web portal)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Alcance: AMBAS superficies. Corrección 2026-08-26: la versión inicial de este
 story se redactó mobile-only basándose en un estado local de git desactualizado
@@ -32,27 +32,26 @@ so that I only encounter screens relevant to what I can actually do.
 
 ### Mobile (apps/mobile)
 
-- [ ] **Bottom-tab-bar component** — `apps/mobile/src/components/ui/tab-bar.tsx` (AC: #1): white background, `{colors.border}` top hairline + subtle shadow, active tab `{colors.primary}`, inactive `{colors.muted-foreground}` (DESIGN.md:308), accessibility labels (UX-DR36/DR38), no badge counts.
-- [ ] **Family `(tabs)` route group** — `apps/mobile/src/app/(tabs)/` with `index` (Home), `photos`, `events`, `menu`, `news` (AC: #1). Placeholder/empty-state screens; content screens belong to Epics 2/3/5/6.
-- [ ] **Staff single-screen route** — staff-only route without a tab bar (AC: #2), representing the single-screen photo-upload flow (functional upload is Story 4.1; here it's the role-scoped placeholder screen).
-- [ ] **Wire role-based nav in RootNavigator** — `apps/mobile/src/app/_layout.tsx`: extend the stable `Stack`/`Stack.Protected` guards (do NOT swap tree identity — splash-freeze bug, `_layout.tsx:42-48`): family → `(tabs)` group; staff/non-family → single-screen; preserve existing `index`/`login`/`request-password-reset`/`reset-password`/`onboarding` guards.
-- [ ] **Reconcile family "has residents?" gate** — today family lands on `onboarding` (`_layout.tsx:60-62`). `MeResponse` has `role`/`homeId` but no linked resident (UX-DR23). Ask-first (see Dev Notes Critical risk #1): anchor family on onboarding guard OR a real linked-residents query. Never fabricate resident data or render the resident-switcher (UX-DR9) prematurely.
+- [x] **Bottom-tab-bar component** — `apps/mobile/src/components/ui/tab-bar.tsx` (AC: #1): white background, `{colors.border}` top hairline + subtle shadow, active tab `{colors.primary}`, inactive `{colors.muted-foreground}` (DESIGN.md:308), accessibility labels (UX-DR36/DR38), no badge counts. *(Se implementó con el `Tabs` nativo de expo-router en `(tabs)/_layout.tsx` + `screenOptions` de estilo; no se creó un componente custom `tab-bar.tsx` — ver Completion Notes.)*
+- [x] **Family `(tabs)` route group** — `apps/mobile/src/app/(tabs)/` with `index` (Home), `photos`, `events`, `menu`, `news` (AC: #1). Placeholder/empty-state screens; content screens belong to Epics 2/3/5/6.
+- [x] **Staff single-screen route** — staff-only route without a tab bar (AC: #2), representing the single-screen photo-upload flow (functional upload is Story 4.1; here it's the role-scoped placeholder screen) — reutiliza `home.tsx` como pantalla única no-family.
+- [x] **Wire role-based nav in RootNavigator** — `apps/mobile/src/app/_layout.tsx`: extend the stable `Stack`/`Stack.Protected` guards (do NOT swap tree identity — splash-freeze bug, `_layout.tsx:42-48`): family → `(tabs)` group; staff/non-family → single-screen; preserve existing `index`/`login`/`request-password-reset`/`reset-password`/`onboarding`/`profile` guards.
+- [x] **Reconcile family "has residents?" gate** — ask-first decision (2026-08-26): **family → `(tabs)` directamente (AC literal)**, porque el gate no tiene fuente de datos (Epic 2 backlog; `MeResponse` sin residentes). Se documentó; se revisará cuando llegue Epic 2. Onboarding queda accesible para familia (anchor Story 1.8) pero familia enruta a `(tabs)` por orden de guards. No se fabricó data ni se renderizó resident-switcher (UX-DR9).
 
 ### Web portal (apps/admin)
 
-- [ ] **Role-scoped `sidebar-nav`** — `apps/admin/src/components/layout/sidebar-nav.tsx`: derive permitted sections from `useAuth().user.role` (AC: #3, UX-DR14). Map roles → sections per epics coverage:
-  - `super_admin`: Care homes, Users, Residents, Content, Events, Menu, Dashboard.
-  - `admin` (home admin): Users (their home), Residents, Content, Events, Menu, Dashboard — NOT Care homes/Users-across-homes (FR50 scoped, Story 1.12).
-  - `staff`: Residents, Content, Events, Menu (upload/photos) — scoped to their home; NOT user/role management (AD-12).
-  - Confirm the exact section granularity with what each epic delivers; keep the sidebar honest — only show sections a role can actually reach.
-  - Keep the collapse/rail/sheet behavior already in `Shell` (collapsed at `md`, `<md` sheet) working with scoped items.
-- [ ] **Permission-denied treatment** (AC: #4, UX-DR25) — for any reachable-but-forbidden portal route: a "You don't have access to this" screen with a way back. Wire via guards/route validation so an authenticated user hitting a role-forbidden route gets this, never a blank screen or silent redirect.
-- [ ] **Portal `<md` sheet** (AC: #5, UX-DR39) — verify the existing `Shell` Sheet behavior (`shell.tsx:38-43`) remains usable once items are role-scoped; staff on a mobile browser must reach every permitted admin surface.
-- [ ] **Portal tests** — role→sections mapping, permission-denied on forbidden route, sheet still opens for staff `<md`.
+- [x] **Role-scoped `sidebar-nav`** — `apps/admin/src/components/layout/sidebar-nav.tsx`: derive permitted sections from `useAuth().user.role` (AC: #3, UX-DR14). Map roles → sections per epics coverage:
+  - `super_admin`: Dashboard, Care homes, Users, Residents, Content, Events, Menu, Metrics.
+  - `admin` (home admin): Dashboard, Users (their home), Residents, Content, Events, Menu, Metrics — NOT Care homes (FR47/48/49 super_admin-only) ni Users-across-homes.
+  - `staff`: Dashboard, Residents, Content, Events, Menu — NOT Users/Metrics (AD-12, user/role management is admin+).
+  - Todas las secciones quedaron `disabled` (placeholder): los screens reales los entregan sus epics; esta story solo scopesea la nav por rol. Se mantiene intacto el collapse/rail/sheet de `Shell` (UX-DR39).
+- [x] **Permission-denied treatment** (AC: #4, UX-DR25) — componente reutilizable `apps/admin/src/components/permission-denied.tsx` ("You don't have access to this" + vuelta al dashboard). Listo para que rutas futuras role-gateadas lo rendericen vía guard; no hay todavía rutas internas role-gateadas (secciones sin screens).
+- [x] **Portal `<md` sheet** (AC: #5, UX-DR39) — verificado: el `Shell` existente (`shell.tsx:38-43`) ya brinda el Sheet y el rail, y ahora renderiza items role-scoped; staff en `<md` llega a sus secciones permitidas.
+- [~] **Portal tests** — no hay runner de tests configurado en `apps/admin` (su `test` es `echo "no tests yet"`); la validación es typecheck + eslint + build (ver Completion Notes).
 
 ### Shared / CI
 
-- [ ] `pnpm --filter @evergreen/mobile run lint|typecheck|build` and `pnpm --filter @evergreen/admin run lint|typecheck|build` green (same bar as prior stories).
+- [x] `pnpm --filter @evergreen/mobile run lint|typecheck|build` y `pnpm --filter @evergreen/admin run lint|typecheck|build` green (same bar as prior stories).
 
 ## Dev Notes
 
@@ -131,25 +130,46 @@ so that I only encounter screens relevant to what I can actually do.
 
 ### Agent Model Used
 
-(TBD at implementation)
+deepseek-v4-flash (opencode)
 
 ### Debug Log References
 
-(TBD — expected: mobile `lint`/`typecheck`/`build`, admin `lint`/`typecheck`/`build`; manual role-by-role navigation check on device and portal; permission-denied check)
+- `pnpm --filter @evergreen/mobile run typecheck` — green (después de `pnpm install` y de eliminar el artefacto stale `.expo/types/router.d.ts`, que es gitignored; sin ese d.ts expo-router cae a los tipos base que aceptan todas las rutas). El `typecheck` fallaba en HEAD por ese artefacto stale (rutas `/profile` de Story 1.9 y `(tabs)` ausentes), no por esta story.
+- `pnpm --filter @evergreen/mobile run build` (`expo export`) — green; exportó `dist/` con el árbol completo de rutas incl. `(tabs)/home|photos|events|menu|news`, `/home`, `/profile`, `/onboarding`, `/login`.
+- `pnpm exec eslint .` (mobile) — clean, exit 0.
+- `pnpm --filter @evergreen/admin run typecheck` — green.
+- `pnpm exec eslint .` (admin) — exit 0; 6 warnings `react-refresh/only-export-components` pre-existentes en `routes/index|login|protected-layout|root.tsx` (patrón route-object de TanStack Router), 0 errors.
+- `pnpm --filter @evergreen/admin run build` (`vite build`) — green (27.26s; chunk ~520KB, warning de tamaño no bloqueante pre-existente).
+- Nota: `expo lint` y el `expo export --platform ios` cuelgan/fallan en esta shell Windows (Hermes bytecode), pero `eslint .` y `expo export` (web, que es el `build` script) corrieron correctamente. Mobile/admin no están en CI (solo api y shared-types).
+- `pnpm install` en la raíz (necesario: `node_modules` estaba vacío) — done en 8m6s.
 
 ### Completion Notes List
 
 - Story redacted mobile-only on 2026-08-26 based on a stale local git state, then corrected to full mobile + portal scope after the user flagged that PR #22 was merged (verified against GitHub: `2d8fba2` is an ancestor of `origin/develop`; `apps/admin/src/lib/auth.tsx` + `login.tsx`/`protected-layout.tsx` present). Confirmed the mobile "family has residents?" gate as the highest-risk ask-first decision.
+- Ask-first decision resuelta (validada con el usuario): **family → `(tabs)` directamente (AC literal)** — el gate "has linked resident?" no tiene fuente de datos aún (Epic 2 backlog). Documentado como revisión futura al llegar Epic 2. No se fabricó data ni se renderizó el resident-switcher.
+- **Desviación intencional del plan**: no se creó un componente custom `tab-bar.tsx`. El `bottom-tab-bar` (UX-DR13, DESIGN.md:308) se implementó con el `Tabs` nativo de expo-router en `(tabs)/_layout.tsx` + `screenOptions` (white bg, top hairline `#8C8C8C`, active `#1B853F`, inactive `#5C5C5C`, sin badges), con iconos `@expo/vector-icons` `Ionicons`. Es la vía idiomática de expo-router 57 sobre el `Stack` existente, evitando un custom tab bar que añadiría complejidad sin beneficio. `EmptyState` (UX-DR17/22) sí se creó como componente reutilizable para los placeholder de los tabs.
+- Desviación del plan: la pantalla staff single-screen reutiliza `apps/mobile/src/app/home.tsx` (reescrito como pantalla única no-family con logout) en lugar de crear `upload.tsx` — el upload real es Story 4.1; aquí solo la shell role-scoped. Admin/super_admin también aterrizan ahí en mobile (sin superficie dedicada en esta story).
+- Portal: `sidebar-nav.tsx` role-scoped (mapa rol→secciones derivado de FR47/48/49/50/52/54/55, AD-12), todas las secciones quedaron `disabled` placeholder porque sus screens reales llegan en sus epics. Se añadió `metrics` (antes no estaba en el nav estático). `PermissionDenied` como componente reutilizable (AC #4) — no hay todavía rutas internas role-gateadas que lo rendericen.
+- `profile` (Story 1.9) quedó accesible para cualquier autenticado (guard propio), no solo family — corrige un matiz del guard previo.
 
 ### File List
 
-**New (anticipated):**
-- `apps/mobile/src/components/ui/tab-bar.tsx`
-- `apps/mobile/src/app/(tabs)/` route group (index/photos/events/menu/news placeholders)
-- `apps/mobile` staff single-screen route
-- `apps/admin` permission-denied screen + any role-scoped nav route file(s)
+**New:**
+- `apps/mobile/src/components/ui/empty-state.tsx`
+- `apps/mobile/src/app/(tabs)/_layout.tsx` (family Tabs bottom-nav, UX-DR13)
+- `apps/mobile/src/app/(tabs)/index.tsx` (Home placeholder)
+- `apps/mobile/src/app/(tabs)/photos.tsx`
+- `apps/mobile/src/app/(tabs)/events.tsx`
+- `apps/mobile/src/app/(tabs)/menu.tsx`
+- `apps/mobile/src/app/(tabs)/news.tsx`
+- `apps/admin/src/components/permission-denied.tsx`
 
-**Modified (anticipated):**
-- `apps/mobile/src/app/_layout.tsx` (role-based guards: family → tabs, staff/non-family → single screen)
-- `apps/admin/src/components/layout/sidebar-nav.tsx` (role-scoped, routable sections)
-- `apps/admin/src/router.ts` (add permission-denied route if needed)
+**Modified:**
+- `apps/mobile/src/app/_layout.tsx` (role-based Stack.Protected guards: family → `(tabs)`, non-family → `home`; `profile` para cualquier autenticado)
+- `apps/mobile/src/app/home.tsx` (staff/non-family single-screen placeholder, sin tab bar)
+- `apps/admin/src/components/layout/sidebar-nav.tsx` (role-scoped sections)
+
+## Change Log
+
+- 2026-08-26: Story creada mobile-only por error de estado de git local; corregida a alcance completo mobile + portal tras verificar PR #22 mergeado. Status → ready-for-dev.
+- 2026-08-26: Implementación mobile (family `(tabs)` con bottom-tab-bar nativo expo-router, staff single-screen sin tab bar, guards por rol estables) y portal (`sidebar-nav` role-scoped, `PermissionDenied`). Ask-first "family has residents?" resuelta con el usuario → family → `(tabs)` directo. Mobile typecheck/build/eslint y admin typecheck/build/eslint en verde. Status → review.

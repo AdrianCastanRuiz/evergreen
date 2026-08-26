@@ -54,15 +54,25 @@ function RootNavigator() {
       <Stack.Protected guard={status === "resolving"}>
         <Stack.Screen name="index" />
       </Stack.Protected>
+      {/* Family → the (tabs) group with Home/Photos/Events/Menu/News (FR10,
+          Story 1.10 AC #1). Per Story 1.10's ask-first decision, a family
+          member is routed here directly — the "has a linked resident?" gate
+          has no data source yet (Epic 2 backlog). */}
+      <Stack.Protected guard={status === "authenticated" && user?.role === "family"}>
+        <Stack.Screen name="(tabs)" />
+      </Stack.Protected>
+      {/* Staff (and non-family) → single-screen, no tab bar (Story 1.10 AC #2).
+          Admin/super_admin keep this screen on mobile (portal is their home). */}
       <Stack.Protected guard={status === "authenticated" && user?.role !== "family"}>
         <Stack.Screen name="home" />
       </Stack.Protected>
+      {/* Family onboarding (Story 1.8 anchor; kept reachable, family currently
+          routes to (tabs) by order of the guards above). */}
       <Stack.Protected guard={status === "authenticated" && user?.role === "family"}>
         <Stack.Screen name="onboarding" />
       </Stack.Protected>
-      {/* Story 1.9: reachable by every authenticated role, unlike home/onboarding
-          above (role-exclusive) — deliberately overlapping guard, same shape as
-          reset-password's own overlapping guard below. */}
+      {/* Profile (Story 1.9, FR4) is reachable by any authenticated user,
+          regardless of role. */}
       <Stack.Protected guard={status === "authenticated"}>
         <Stack.Screen name="profile" />
       </Stack.Protected>
