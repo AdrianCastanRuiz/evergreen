@@ -72,6 +72,52 @@ export class PasswordResetService {
       throw new BadRequestException(INVALID_OR_EXPIRED_MESSAGE);
     }
 
+    // Distinguish "never-activated invite" (passwordHash still null — must
+    // activate, AC #2) from "was active, since revoked by an admin"
+    // (passwordHash set from the original activation, isActive now false).
+    // The revoked case still needs a second distinction: a *stale* token
+    // issued before the revocation (the actual vulnerability — reject) vs a
+    // *fresh* token issued after it, e.g. by a legitimate re-invite via
+    // UsersService.grantExistingFamilyUserHomeAccess, which must still work
+    // (reactivate). revokedAt (set by UsersService.revokeAccess, cleared on
+    // reactivation) makes that comparable against the token's own createdAt.
+    // A revoked user with no revokedAt (pre-migration legacy row) has no
+    // provable "issued after revocation" token, so it defaults to reject —
+    // the safe side, matching this guard's original behavior.
+    // Folded into the same generic message as expired/used/unknown tokens —
+    // a distinct message here would itself be an account-status oracle.
+    //
+    // This is a cheap pre-check for a fast/typical rejection, same role as
+    // the token findFirst above — it is NOT what enforces the guard for a
+    // concurrent revoke (see the transaction's mirrored `updateMany` below,
+    // code-review finding: a bare read-then-write here would leave a TOCTOU
+    // window across the bcrypt hash below for an admin to revoke access
+    // into).
+    const user = await this.prisma.client.user.findUnique({
+      where: { id: resetToken.userId },
+      select: { isActive: true, passwordHash: true, revokedAt: true },
+    });
+    if (!user) {
+      throw new BadRequestException(INVALID_OR_EXPIRED_MESSAGE);
+    }
+    const isStaleTokenOnRevokedAccount =
+      !user.isActive &&
+      user.passwordHash !== null &&
+      (user.revokedAt === null || resetToken.createdAt < user.revokedAt);
+    if (isStaleTokenOnRevokedAccount) {
+      // Timing side-channel mitigation (code-review finding): without this,
+      // this rejection returns near-instantly while the active-user success
+      // path below awaits a real bcrypt hash + transaction — letting anyone
+      // who already holds a valid token for the account infer revoked-vs-
+      // active status from response latency alone, which is itself a
+      // distinguishing signal even though the thrown message is identical
+      // (AC #1: "no distinguishing signal that reveals the account was
+      // deactivated"). Mirrors AuthService.login's dummy-hash compare for
+      // the same class of leak.
+      await this.passwordService.hash(newPassword);
+      throw new BadRequestException(INVALID_OR_EXPIRED_MESSAGE);
+    }
+
     const passwordHash = await this.passwordService.hash(newPassword);
 
     await this.prisma.client.$transaction(async (tx) => {
@@ -90,10 +136,25 @@ export class PasswordResetService {
         throw new BadRequestException(INVALID_OR_EXPIRED_MESSAGE);
       }
 
-      await tx.user.update({
-        where: { id: resetToken.userId },
-        data: { passwordHash, isActive: true },
+      // Re-verifies the same guard at commit time, atomically — closes the
+      // TOCTOU window between the pre-check read above and here (e.g. an
+      // admin revoking the account while this call was awaiting bcrypt).
+      // Mirrors the token claim's own atomic-conditional-update pattern.
+      const { count: userUpdateCount } = await tx.user.updateMany({
+        where: {
+          id: resetToken.userId,
+          OR: [
+            { passwordHash: null }, // never-activated invite (AC #2)
+            { isActive: true }, // already active (AC #3)
+            { revokedAt: { lte: resetToken.createdAt } }, // revoked, but this token postdates it (re-invite)
+          ],
+        },
+        data: { passwordHash, isActive: true, revokedAt: null },
       });
+      if (userUpdateCount === 0) {
+        throw new BadRequestException(INVALID_OR_EXPIRED_MESSAGE);
+      }
+
       // Invalidate any other still-unused, unexpired tokens for this user —
       // a fresh password makes all older outstanding reset links moot.
       await tx.passwordResetToken.updateMany({

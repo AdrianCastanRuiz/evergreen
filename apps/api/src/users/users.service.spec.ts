@@ -953,7 +953,7 @@ describe('UsersService', () => {
       expect(tenantContext.runBypassed).toHaveBeenCalled();
       expect(prisma.client.user.update).toHaveBeenCalledWith({
         where: { id: 'user-41' },
-        data: { isActive: false },
+        data: { isActive: false, revokedAt: expect.any(Date) as Date },
       });
     });
 

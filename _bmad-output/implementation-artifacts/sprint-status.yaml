@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-08-06
-last_updated: 2026-08-26 # added 2-0 security bugfix story + Epic 2 stories (2-1..2-4), all ready-for-dev
+last_updated: 2026-08-30 # 2-0 implemented + code-reviewed (decision resolved, 3 patches applied), status → done
 project: evergreen
 project_key: NOKEY
 tracking_system: file-system
@@ -66,7 +66,7 @@ development_status:
   epic-1-retrospective: done # 2026-08-26 — see epic-1-retro-2026-08-26.md
 
   epic-2: in-progress
-  2-0-fix-revoked-user-reactivation-via-password-reset: ready-for-dev # security bugfix from epic-1 retro, high priority — not in epics.md — issue #29
+  2-0-fix-revoked-user-reactivation-via-password-reset: done # security bugfix from epic-1 retro, high priority — not in epics.md — issue #29
   2-1-admins-crean-y-gestionan-perfiles-de-residentes-por-care-home: ready-for-dev # issue #30
   2-2-admins-vinculan-cuentas-familiares-a-residentes-especificos: ready-for-dev # issue #31
   2-3-familia-ve-la-lista-de-residentes-vinculados: ready-for-dev # issue #32
@@ -117,7 +117,7 @@ action_items:
   - epic: 1
     action: "Fix isActive reactivation gap in password-reset.service.ts confirmReset — a revoked user can self-reactivate via a reset link. Tracked as its own story: 2-0-fix-revoked-user-reactivation-via-password-reset"
     owner: "Amelia (Dev)"
-    status: in-progress
+    status: done
   - epic: 1
     action: "Extract shared rollback-on-failed-write helper for the create-pending-account pattern (duplicated across createPendingHomeAdmin/createSuperAdmin/inviteUser)"
     owner: "Amelia (Dev)"

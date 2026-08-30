@@ -532,9 +532,13 @@ export class UsersService {
         }),
       );
       if (remaining === 0) {
+        // revokedAt lets PasswordResetService.confirmReset tell a stale
+        // token issued before this revocation (reject) apart from a fresh
+        // one issued after it — e.g. by a legitimate re-invite via
+        // grantExistingFamilyUserHomeAccess (accept).
         await this.prisma.client.user.update({
           where: { id: targetUserId },
-          data: { isActive: false },
+          data: { isActive: false, revokedAt: new Date() },
         });
       }
     } catch (error) {
