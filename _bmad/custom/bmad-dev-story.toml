@@ -1,0 +1,8 @@
+# Team / enterprise override for bmad-dev-story.
+# Committed to the repo — applies to every developer on the project.
+
+[workflow]
+
+activation_steps_prepend = [
+  "Before beginning implementation, ensure a dedicated git branch exists for this story: if the current branch is `main` or `develop`, create and check out a new branch named `feature/<story-id>` (use `fix/<story-id>` if the story is a bugfix) from the current base branch before making any code changes. Never implement a story's changes directly on `main` or `develop`.",
+]
