@@ -41,14 +41,14 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-08-06
-last_updated: 2026-08-26 # 1-8 done (issue #23, PR #25 merged)
+last_updated: 2026-08-26 # added 2-0 security bugfix story + Epic 2 stories (2-1..2-4), all ready-for-dev
 project: evergreen
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 
 development_status:
-  epic-1: in-progress
+  epic-1: done
   1-1-scaffold-del-proyecto-y-fundacion-multi-tenant: done
   1-2-super-admin-crea-y-gestiona-care-homes: done
   1-3-super-admin-asigna-home-admins-a-un-care-home: done
@@ -63,13 +63,14 @@ development_status:
   1-12-home-admins-gestionan-usuarios-y-roles-de-su-home: done # issue #26 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/20 (merged)
   1-13-scaffold-real-de-apps-admin-portal-web: done # issue #27 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/19 (merged)
   1-14-login-del-portal-web: done # issue #28 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/22 (merged)
-  epic-1-retrospective: optional
+  epic-1-retrospective: done # 2026-08-26 — see epic-1-retro-2026-08-26.md
 
-  epic-2: backlog
-  2-1-admins-crean-y-gestionan-perfiles-de-residentes-por-care-home: backlog
-  2-2-admins-vinculan-cuentas-familiares-a-residentes-especificos: backlog
-  2-3-familia-ve-la-lista-de-residentes-vinculados: backlog
-  2-4-familia-ve-el-perfil-de-un-residente: backlog
+  epic-2: in-progress
+  2-0-fix-revoked-user-reactivation-via-password-reset: ready-for-dev # security bugfix from epic-1 retro, high priority — not in epics.md — issue #29
+  2-1-admins-crean-y-gestionan-perfiles-de-residentes-por-care-home: ready-for-dev # issue #30
+  2-2-admins-vinculan-cuentas-familiares-a-residentes-especificos: ready-for-dev # issue #31
+  2-3-familia-ve-la-lista-de-residentes-vinculados: ready-for-dev # issue #32
+  2-4-familia-ve-el-perfil-de-un-residente: ready-for-dev # issue #33
   epic-2-retrospective: optional
 
   epic-3: backlog
@@ -111,3 +112,17 @@ development_status:
   8-1-super-admin-ve-metricas-a-nivel-plataforma: backlog
   8-2-home-admin-ve-metricas-a-nivel-de-su-home: backlog
   epic-8-retrospective: optional
+
+action_items:
+  - epic: 1
+    action: "Fix isActive reactivation gap in password-reset.service.ts confirmReset — a revoked user can self-reactivate via a reset link. Tracked as its own story: 2-0-fix-revoked-user-reactivation-via-password-reset"
+    owner: "Amelia (Dev)"
+    status: in-progress
+  - epic: 1
+    action: "Extract shared rollback-on-failed-write helper for the create-pending-account pattern (duplicated across createPendingHomeAdmin/createSuperAdmin/inviteUser)"
+    owner: "Amelia (Dev)"
+    status: open
+  - epic: 1
+    action: "Add a shared trim-email validator/decorator instead of per-DTO fixes (fixed 3x separately: CreateSuperAdminDto, InviteHomeAdminDto, InviteUserDto)"
+    owner: "Amelia (Dev)"
+    status: open
