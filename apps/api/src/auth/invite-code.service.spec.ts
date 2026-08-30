@@ -123,7 +123,11 @@ describe('InviteCodeService', () => {
       expect(claimArg.data.inviteCodeUsedAt).toBeInstanceOf(Date);
       expect(prisma.client.user.update).toHaveBeenCalledWith({
         where: { id: 'user-1' },
-        data: { passwordHash: 'hashed-password', isActive: true },
+        data: {
+          passwordHash: 'hashed-password',
+          isActive: true,
+          revokedAt: null,
+        },
       });
     });
 

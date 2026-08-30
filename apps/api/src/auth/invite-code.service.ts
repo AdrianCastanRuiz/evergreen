@@ -135,7 +135,7 @@ export class InviteCodeService {
 
         await tx.user.update({
           where: { id: membership.userId },
-          data: { passwordHash, isActive: true },
+          data: { passwordHash, isActive: true, revokedAt: null },
         });
       });
     });

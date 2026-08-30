@@ -9,7 +9,7 @@ describe('PasswordResetService', () => {
   let service: PasswordResetService;
   let prisma: {
     client: {
-      user: { findUnique: jest.Mock; update: jest.Mock };
+      user: { findUnique: jest.Mock; updateMany: jest.Mock };
       passwordResetToken: {
         findFirst: jest.Mock;
         create: jest.Mock;
@@ -28,6 +28,7 @@ describe('PasswordResetService', () => {
     passwordHash: 'hashed',
     role: 'staff' as const,
     isActive: true,
+    revokedAt: null,
   };
 
   const pendingUser = {
@@ -36,12 +37,36 @@ describe('PasswordResetService', () => {
     passwordHash: null,
     role: 'staff' as const,
     isActive: false,
+    revokedAt: null,
+  };
+
+  // Revoked one hour ago — a token created before that instant is stale
+  // (the vulnerability this guard closes); one created after is fresh (e.g.
+  // issued by a legitimate re-invite) and must still work.
+  const revokedAt = new Date(Date.now() - 60 * 60 * 1000);
+
+  const revokedUser = {
+    ...activeUser,
+    id: 'user-3',
+    isActive: false,
+    revokedAt,
+  };
+
+  // Same revoked state, but with no revokedAt on record — models a row
+  // revoked before this column existed. No token can be proven to have
+  // been issued after an unknown revocation, so the guard defaults to
+  // reject (the safe side).
+  const revokedUserNoTimestamp = {
+    ...activeUser,
+    id: 'user-4',
+    isActive: false,
+    revokedAt: null,
   };
 
   beforeEach(async () => {
     prisma = {
       client: {
-        user: { findUnique: jest.fn(), update: jest.fn() },
+        user: { findUnique: jest.fn(), updateMany: jest.fn() },
         passwordResetToken: {
           findFirst: jest.fn(),
           create: jest.fn(),
@@ -58,12 +83,13 @@ describe('PasswordResetService', () => {
     };
     passwordService = { hash: jest.fn() };
     mailService = { sendPasswordResetEmail: jest.fn() };
-    // Default: the atomic claim succeeds (one row affected). Individual
-    // tests override with mockResolvedValueOnce to simulate the token
-    // having already been claimed by a concurrent request.
+    // Default: both atomic claims succeed (one row affected). Individual
+    // tests override with mockResolvedValueOnce to simulate a concurrent
+    // claim, or a TOCTOU revoke racing the user reactivation.
     prisma.client.passwordResetToken.updateMany.mockResolvedValue({
       count: 1,
     });
+    prisma.client.user.updateMany.mockResolvedValue({ count: 1 });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -159,12 +185,14 @@ describe('PasswordResetService', () => {
       tokenHash: 'irrelevant-in-mock',
       usedAt: null,
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      createdAt: new Date(Date.now() - 5 * 60 * 1000),
     };
 
     it('sets the new password, activates the account, and marks the token used', async () => {
       prisma.client.passwordResetToken.findFirst.mockResolvedValue(
         matchedToken,
       );
+      prisma.client.user.findUnique.mockResolvedValue(activeUser);
       passwordService.hash.mockResolvedValue('new-hashed-password');
 
       await expect(
@@ -195,9 +223,23 @@ describe('PasswordResetService', () => {
         data: { usedAt: anyDate },
       });
 
-      expect(prisma.client.user.update).toHaveBeenCalledWith({
-        where: { id: activeUser.id },
-        data: { passwordHash: 'new-hashed-password', isActive: true },
+      // Reactivation is also a conditional updateMany — re-verifies the
+      // guard atomically at commit time (TOCTOU protection), mirroring the
+      // token claim above.
+      expect(prisma.client.user.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: activeUser.id,
+          OR: [
+            { passwordHash: null },
+            { isActive: true },
+            { revokedAt: { lte: matchedToken.createdAt } },
+          ],
+        },
+        data: {
+          passwordHash: 'new-hashed-password',
+          isActive: true,
+          revokedAt: null,
+        },
       });
 
       // Second updateMany call invalidates the user's other outstanding
@@ -221,6 +263,7 @@ describe('PasswordResetService', () => {
       prisma.client.passwordResetToken.findFirst.mockResolvedValue(
         matchedToken,
       );
+      prisma.client.user.findUnique.mockResolvedValue(activeUser);
       passwordService.hash.mockResolvedValue('new-hashed-password');
       prisma.client.passwordResetToken.updateMany.mockResolvedValueOnce({
         count: 0,
@@ -229,9 +272,34 @@ describe('PasswordResetService', () => {
       await expect(
         service.confirmReset('raw-token', 'a-new-password'),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prisma.client.user.update).not.toHaveBeenCalled();
+      expect(prisma.client.user.updateMany).not.toHaveBeenCalled();
       // The loser must not proceed to invalidate other tokens either — the
       // claim call was its only updateMany invocation.
+      expect(prisma.client.passwordResetToken.updateMany).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+
+    it('aborts reactivation if the account is revoked between the pre-check and the transaction commit (TOCTOU)', async () => {
+      // Pre-check sees a pending, never-activated account — passes. Models
+      // an admin revoking access in the window between that read and the
+      // transaction's commit (e.g. while this call was awaiting bcrypt) via
+      // the same atomic-updateMany pattern the token claim already uses:
+      // the conditional reactivation update affects 0 rows.
+      prisma.client.passwordResetToken.findFirst.mockResolvedValue({
+        ...matchedToken,
+        userId: pendingUser.id,
+      });
+      prisma.client.user.findUnique.mockResolvedValue(pendingUser);
+      passwordService.hash.mockResolvedValue('new-hashed-password');
+      prisma.client.user.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(
+        service.confirmReset('raw-token', 'a-new-password'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      // Aborted before invalidating the user's other outstanding tokens —
+      // the token claim was this call's only other DB write.
       expect(prisma.client.passwordResetToken.updateMany).toHaveBeenCalledTimes(
         1,
       );
@@ -242,14 +310,119 @@ describe('PasswordResetService', () => {
         ...matchedToken,
         userId: pendingUser.id,
       });
+      prisma.client.user.findUnique.mockResolvedValue(pendingUser);
       passwordService.hash.mockResolvedValue('new-hashed-password');
 
       await service.confirmReset('raw-token', 'a-new-password');
 
-      expect(prisma.client.user.update).toHaveBeenCalledWith({
-        where: { id: pendingUser.id },
-        data: { passwordHash: 'new-hashed-password', isActive: true },
+      expect(prisma.client.user.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: pendingUser.id,
+          OR: [
+            { passwordHash: null },
+            { isActive: true },
+            { revokedAt: { lte: matchedToken.createdAt } },
+          ],
+        },
+        data: {
+          passwordHash: 'new-hashed-password',
+          isActive: true,
+          revokedAt: null,
+        },
       });
+    });
+
+    it('rejects a stale reset attempt for a revoked account — token issued before the revocation — without reactivating it', async () => {
+      prisma.client.passwordResetToken.findFirst.mockResolvedValue({
+        ...matchedToken,
+        userId: revokedUser.id,
+        createdAt: new Date(revokedAt.getTime() - 60 * 60 * 1000), // 1h before revoke
+      });
+      prisma.client.user.findUnique.mockResolvedValue(revokedUser);
+      passwordService.hash.mockResolvedValue('new-hashed-password');
+
+      await expect(
+        service.confirmReset('raw-token', 'a-new-password'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(prisma.client.user.updateMany).not.toHaveBeenCalled();
+      // Rejected before the token-claiming transaction — the token is left
+      // untouched, not marked used (AC #4).
+      expect(
+        prisma.client.passwordResetToken.updateMany,
+      ).not.toHaveBeenCalled();
+      // Timing side-channel mitigation: still pays the bcrypt cost before
+      // rejecting, so this path takes about as long as the success path.
+      expect(passwordService.hash).toHaveBeenCalledWith('a-new-password');
+    });
+
+    it('accepts a fresh reset attempt for a revoked account — token issued after the revocation, e.g. by a legitimate re-invite — and reactivates it', async () => {
+      const freshTokenCreatedAt = new Date(revokedAt.getTime() + 60 * 1000); // 1min after revoke
+      prisma.client.passwordResetToken.findFirst.mockResolvedValue({
+        ...matchedToken,
+        userId: revokedUser.id,
+        createdAt: freshTokenCreatedAt,
+      });
+      prisma.client.user.findUnique.mockResolvedValue(revokedUser);
+      passwordService.hash.mockResolvedValue('new-hashed-password');
+
+      await expect(
+        service.confirmReset('raw-token', 'a-new-password'),
+      ).resolves.toBeUndefined();
+
+      expect(prisma.client.user.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: revokedUser.id,
+          OR: [
+            { passwordHash: null },
+            { isActive: true },
+            { revokedAt: { lte: freshTokenCreatedAt } },
+          ],
+        },
+        data: {
+          passwordHash: 'new-hashed-password',
+          isActive: true,
+          revokedAt: null,
+        },
+      });
+    });
+
+    it('rejects a revoked account with no revokedAt on record (legacy row), regardless of token age', async () => {
+      prisma.client.passwordResetToken.findFirst.mockResolvedValue({
+        ...matchedToken,
+        userId: revokedUserNoTimestamp.id,
+      });
+      prisma.client.user.findUnique.mockResolvedValue(revokedUserNoTimestamp);
+      passwordService.hash.mockResolvedValue('new-hashed-password');
+
+      await expect(
+        service.confirmReset('raw-token', 'a-new-password'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(prisma.client.user.updateMany).not.toHaveBeenCalled();
+      expect(
+        prisma.client.passwordResetToken.updateMany,
+      ).not.toHaveBeenCalled();
+      expect(passwordService.hash).toHaveBeenCalledWith('a-new-password');
+    });
+
+    it('rejects when the token references a user row that no longer exists, without paying the timing-mitigation cost', async () => {
+      // FK-backed (PasswordResetToken.userId references User with
+      // onDelete: Cascade) — near-impossible in practice, but the guard has
+      // a defensive `!user` branch that should still reject cleanly. Unlike
+      // the revoked-account case, there's no revoked-vs-active status to
+      // hide here, so no dummy hash is needed.
+      prisma.client.passwordResetToken.findFirst.mockResolvedValue(
+        matchedToken,
+      );
+      prisma.client.user.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.confirmReset('raw-token', 'a-new-password'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(passwordService.hash).not.toHaveBeenCalled();
+      expect(prisma.client.user.updateMany).not.toHaveBeenCalled();
     });
 
     it('rejects an expired token with the generic invalid-or-expired message', async () => {
@@ -260,7 +433,7 @@ describe('PasswordResetService', () => {
       await expect(
         service.confirmReset('expired-token', 'a-new-password'),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prisma.client.user.update).not.toHaveBeenCalled();
+      expect(prisma.client.user.updateMany).not.toHaveBeenCalled();
     });
 
     it('rejects an already-used token with the same generic message (no oracle)', async () => {
