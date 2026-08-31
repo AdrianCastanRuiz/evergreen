@@ -125,5 +125,17 @@ describe('HomesService', () => {
         homesService.update(home.id, { name: 'Taken Name' }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
+
+    it('clears the address when explicitly set to null (Review Finding, patch)', async () => {
+      prisma.client.home.findUnique.mockResolvedValue(home);
+      prisma.client.home.update.mockResolvedValue({ ...home, address: null });
+
+      await homesService.update(home.id, { address: null });
+
+      expect(prisma.client.home.update).toHaveBeenCalledWith({
+        where: { id: home.id },
+        data: { address: null },
+      });
+    });
   });
 });

@@ -41,16 +41,16 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-08-06
-last_updated: 2026-08-31 # 1-2 frontend implemented, status: review
+last_updated: 2026-08-31 # 1-2 frontend + code review patches complete, status: done
 project: evergreen
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 
 development_status:
-  epic-1: in-progress # reopened 2026-08-31 — 1-2's frontend was never built
+  epic-1: done # re-closed 2026-08-31 — 1-2's frontend gap is now filled
   1-1-scaffold-del-proyecto-y-fundacion-multi-tenant: done
-  1-2-super-admin-crea-y-gestiona-care-homes: review # reopened+implemented 2026-08-31 — backend was done, apps/admin frontend never existed for it (apps/admin didn't exist until Story 1.13); see 1-2-super-admin-crea-y-gestiona-care-homes.md
+  1-2-super-admin-crea-y-gestiona-care-homes: done # reopened+implemented 2026-08-31 — backend was already done, apps/admin frontend never existed for it (apps/admin didn't exist until Story 1.13); see 1-2-super-admin-crea-y-gestiona-care-homes.md
   1-3-super-admin-asigna-home-admins-a-un-care-home: done
   1-4-super-admin-crea-super-admins-adicionales: done
   1-5-home-admin-staff-invita-nuevos-usuarios-staff-o-family-por-email: done # PR: https://github.com/AdrianCastanRuiz/evergreen/pull/17 (merged)

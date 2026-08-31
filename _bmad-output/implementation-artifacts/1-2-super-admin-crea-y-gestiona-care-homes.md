@@ -4,7 +4,7 @@ baseline_commit: 546183a2486d9fd5d1cedd1988a3d2ee2f08f0ff
 
 # Story 1.2: Super admin crea y gestiona care homes
 
-Status: review
+Status: done
 
 <!-- Retroactive story file: the backend for this story shipped early in Epic 1
 (before per-story files existed) and sprint-status.yaml already marks it
@@ -44,6 +44,14 @@ So that a new care home group can be onboarded without any code change or downti
   - [x] Timezone input: a plain text field is enough for V1 (no timezone picker component exists in the codebase yet) — server-side `@IsIn(IANA_TIME_ZONES)` is the actual validation; surface a `400` from that check as an inline field-level error the same way as the name conflict
   - [x] Permission-denied treatment (AC #4, UX-DR25): add a reusable `apps/admin/src/components/permission-denied.tsx` ("You don't have access to this" message + a way back, e.g. a link to `/`) and use it in `care-homes.tsx` when `useAuth().user?.role !== "super_admin"` — client-side UX only, the actual authorization is still `@Roles('super_admin')` server-side (AD-12); do NOT add role-gating to `protected-layout.tsx` itself or to any other route — this story only guards its own screen, same scope discipline Story 2.1 used for the sidebar
   - [x] Call the API via `authedRequest` from `apps/admin/src/lib/api.ts` (existing wrapper — do not build a parallel fetch path)
+
+### Review Findings
+
+- [x] [Review][Decision] Clearing an existing home's address silently fails to persist (AC #3 gap) [apps/admin/src/routes/care-homes.tsx:399-401] — `address: address.trim() || undefined` means blanking the Address field on an edit omits `address` from the PATCH body entirely (`JSON.stringify` drops `undefined` keys); `homes.service.ts#update` passes the DTO straight through to Prisma, so an absent key means "leave unchanged," not "clear it." **Resolved: fix it properly (Adrian's choice).** `UpdateHomeDto.address` and shared-types' `UpdateHomeRequest.address` retyped to `string | null` (no decorator change needed — `@IsOptional()` already skips validation for both `null`/`undefined`, same as Story 2.1's `dob` fix). `homes.service.ts#update` needed no change — it already passes the DTO straight through to Prisma, and Prisma's `HomeUpdateInput.address` natively accepts `string | null`. Frontend's `CareHomeForm` mutation now sends `address: null` explicitly on edit when the field is blank (vs. `undefined` on create, where there's nothing to clear). New unit test: `homes.service.spec.ts`'s `'clears the address when explicitly set to null'`.
+- [x] [Review][Patch] 400 responses are unconditionally misattributed to the timezone field [apps/admin/src/routes/care-homes.tsx:414-428] — `err.status === 400` always routes to `timezoneServerError` on the assumption "name is unlikely to hit its 255-char cap," but there was no client-side length cap enforcing that assumption. **Fixed:** added `maxLength={255}`/`maxLength={500}` to the name/address `Input`s, matching the backend's own `@MaxLength` decorators exactly — the browser itself now prevents typing past those caps, so a 400 reaching this handler can only plausibly be the timezone.
+- [x] [Review][Patch] `user?.role !== "super_admin"` doesn't distinguish a null `user` from a genuinely wrong role [apps/admin/src/routes/care-homes.tsx:266] — `apps/admin/src/lib/auth.tsx`'s `signIn` can leave `status: "authenticated"` with `user: null` if the post-login `/auth/me` call fails. **Fixed:** `CareHomesPage` now checks `!user` first and renders a neutral "Loading your account…" message instead of `PermissionDenied` for that case; the wrong-role check only runs once `user` is confirmed non-null.
+- [x] [Review][Defer] `apps/admin/src/lib/api.ts`'s `ApiError` parsing only handles a string `message`, silently dropping NestJS `ValidationPipe`'s default `string[]` message on every 400 app-wide — already self-flagged by the implementer in this file's Completion Notes as a shared `api.ts` gap, out of this screen's scope to fix. Deferred — logged in `deferred-work.md`.
+- [x] [Review][Defer] No optimistic-concurrency guard on `CareHomeForm`'s edit path [apps/admin/src/routes/care-homes.tsx:374-403] — if another super admin edits/renames the same home between this dialog's data being captured and its submit, the PATCH silently overwrites their concurrent change (lost update). No versioning/`updatedAt` check exists anywhere in the app yet to build this against. Deferred — logged in `deferred-work.md`.
 
 ## Dev Notes
 
@@ -125,16 +133,26 @@ Claude Sonnet 5 (claude-sonnet-5)
 - Known gap, flagged rather than silently left unmentioned: the timezone field's 400-error handling shows a fixed generic message ("Please enter a valid IANA timezone, e.g. Europe/Madrid.") rather than the API's actual validation message. This is because `apps/admin/src/lib/api.ts`'s `ApiError` parsing only handles a string `message`, but NestJS's default `ValidationPipe` returns `message` as a `string[]` for validation failures — so today that array is silently dropped and `ApiError.message` falls back to the HTTP status text ("Bad Request") for ANY validation error on this app, not something specific to this story. Routing a bare 400 to the timezone field is a reasonable inference (name's only constraint is a generous 255-char max, unlikely to be hit) but not a guarantee. A proper fix belongs in `api.ts`'s shared error parsing (handle `string[]` messages), not this screen — flagging here rather than fixing there, to stay in scope.
 - Could not visually verify the screen in a real browser this session (no browser automation connected) — verified instead via clean `tsc -b`/`vite build`/lint, and by reading the actual rendered API contract (`homes.controller.ts`/`homes.service.ts`) the form and list are built against.
 
+**Post-review patches (Decision resolved + both Patch findings applied):**
+- Decision (address-clear bug): resolved by touching the backend after all — `UpdateHomeDto.address`/`UpdateHomeRequest.address` retyped `string | null`, `CareHomeForm` sends `null` explicitly on edit-with-blank-address, `undefined` on create. No `homes.service.ts` change needed (already a pass-through). New test added.
+- Patch (400 misattribution): `maxLength={255}`/`{500}` added to the name/address inputs, matching the backend's `@MaxLength` decorators — makes the "a 400 here is always timezone" assumption actually true.
+- Patch (null-user permission-denied confusion): `CareHomesPage` now shows a neutral loading state for `user === null`, only shows `PermissionDenied` once a non-null user's role is confirmed wrong.
+- Re-verified after patches: `apps/api` 122/122 unit tests (1 new), clean `eslint`, clean real `tsc --noEmit -p tsconfig.build.json`; `apps/admin` clean `tsc -b --noEmit`, `eslint` (0 errors, same 11 pre-existing warnings), `vite build` succeeds.
+- The 2 `[Review][Defer]` findings (api.ts's `string[]` message gap; no optimistic-concurrency guard) were left as-is per the review's own deferral, logged in `deferred-work.md`.
+
 ### File List
 
 - `packages/shared-types/src/homes.ts` (new)
 - `packages/shared-types/src/index.ts` (modified — export `./homes`)
 - `apps/admin/src/components/permission-denied.tsx` (pre-existing since Story 1.10, unmodified — see Completion Notes correction; first real caller wired up by this story)
-- `apps/admin/src/routes/care-homes.tsx` (new)
+- `apps/admin/src/routes/care-homes.tsx` (new; modified again post-review for the 3 findings above)
 - `apps/admin/src/router.ts` (modified — registered `careHomesRoute`)
 - `apps/admin/src/components/layout/sidebar-nav.tsx` (modified — added `to: "/care-homes"` to the existing "Care homes" entry)
+- `apps/api/src/homes/dto/update-home.dto.ts` (modified post-review — `address` retyped `string | null`)
+- `apps/api/src/homes/homes.service.spec.ts` (modified post-review — new null-clear test)
 
 ## Change Log
 
 - 2026-08-31: Retroactive story file created — the backend for this story shipped early in Epic 1 with no per-story file; `apps/admin` didn't exist yet at the time. This file documents the backend as complete and scopes the frontend work.
 - 2026-08-31: Frontend implemented on branch `feature/1-2-super-admin-crea-y-gestiona-care-homes` — `@evergreen/shared-types` Home types, the Care Homes screen in `apps/admin` (list, generic empty state, create/edit dialog with inline 409 name-conflict and timezone validation errors), a new reusable `PermissionDenied` component (AC #4/UX-DR25) used only on this screen, and sidebar nav wiring. All 5 ACs covered by the existing (already-tested) backend plus this new frontend. `apps/admin`: clean `tsc -b --noEmit`, `eslint` (0 errors), `vite build`. `apps/api` (untouched): 121/121 unit tests, 39/39 e2e tests, clean `eslint` and a real `tsc --noEmit -p tsconfig.build.json` compile — no regressions. UI not visually verified in a browser this session. Status → review.
+- 2026-08-31: Code review patches applied — the 1 `[Review][Decision]` finding resolved (Adrian chose to fix the address-clear bug properly, touching the previously "don't touch" backend DTO), both `[Review][Patch]` findings fixed (maxLength caps preventing 400 misattribution; null-user vs. wrong-role distinction on the permission check). The 2 `[Review][Defer]` findings stay deferred. 122/122 `apps/api` unit tests (1 new) and clean real `tsc --noEmit` for `apps/api`; `apps/admin` clean `tsc -b`/`eslint`/`vite build`. Status → done.

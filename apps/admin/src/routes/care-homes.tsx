@@ -49,12 +49,22 @@ function updateHome(id: string, body: UpdateHomeRequest): Promise<Home> {
 function CareHomesPage() {
   const { user } = useAuth();
 
+  // protected-layout.tsx already guarantees status === "authenticated" by
+  // the time this renders — a null user here means the post-login /auth/me
+  // fetch hasn't resolved yet or glitched (auth.tsx's signIn catch sets
+  // user: null without reverting status), NOT a permission denial. Don't
+  // show "you don't have access" for a state that isn't actually that
+  // (Review Finding, patch).
+  if (!user) {
+    return <p className="p-6 text-muted-foreground">Loading your account…</p>;
+  }
+
   // Client-side UX only (AC #4, UX-DR25) — the backend's @Roles('super_admin')
   // on HomesController is what actually enforces this (AD-12/NFR7). No
   // gating added to protected-layout.tsx or any other route; this screen
   // guards only itself, same scope discipline Story 2.1 used for the
   // sidebar's role list.
-  if (user?.role !== "super_admin") {
+  if (user.role !== "super_admin") {
     return <PermissionDenied />;
   }
 
@@ -186,12 +196,25 @@ function CareHomeForm({ home, onSaved, onCancel }: CareHomeFormProps) {
 
   const mutation = useMutation({
     mutationFn: () => {
+      const trimmedAddress = address.trim();
+      if (isEditing) {
+        // null explicitly clears a previously-set address; undefined would
+        // omit the field and leave it untouched server-side — not what a
+        // blanked-out field means here (Review Finding, decision: fixed
+        // properly, mirrors Story 2.1's dob: null fix).
+        const body: UpdateHomeRequest = {
+          name: name.trim(),
+          address: trimmedAddress === "" ? null : trimmedAddress,
+          timezone: timezone.trim(),
+        };
+        return updateHome(home.id, body);
+      }
       const body: CreateHomeRequest = {
         name: name.trim(),
-        address: address.trim() || undefined,
+        address: trimmedAddress || undefined,
         timezone: timezone.trim(),
       };
-      return isEditing ? updateHome(home.id, body) : createHome(body);
+      return createHome(body);
     },
     onSuccess: onSaved,
     onError: (err: unknown) => {
@@ -203,15 +226,17 @@ function CareHomeForm({ home, onSaved, onCancel }: CareHomeFormProps) {
           return;
         }
         if (err.status === 400) {
-          // CreateHomeDto/UpdateHomeDto validate name (length) and timezone
-          // (must be a real IANA zone). In practice a 400 here almost always
-          // means an invalid timezone value — name only has a generous
-          // 255-char max. Routed to the timezone field rather than a
-          // generic banner (UX-DR28); NestJS's default ValidationPipe
-          // returns `message` as a string[], which api.ts's ApiError
-          // currently only surfaces as the request's statusText fallback
-          // ("Bad Request"), not the actual validation detail — a shared
-          // gap in api.ts's error parsing, not specific to this screen.
+          // CreateHomeDto/UpdateHomeDto validate name/address length and
+          // timezone (must be a real IANA zone). The name/address inputs
+          // below carry maxLength={255}/{500} matching the backend's own
+          // @MaxLength decorators (Review Finding, patch), so in practice a
+          // 400 that still reaches here can only be the timezone value —
+          // the length caps are enforced before the request is ever sent.
+          // NestJS's default ValidationPipe returns `message` as a
+          // string[], which api.ts's ApiError currently only surfaces as
+          // the request's statusText fallback ("Bad Request"), not the
+          // actual validation detail — a shared gap in api.ts's error
+          // parsing, not specific to this screen (deferred-work.md).
           setTimezoneServerError(
             "Please enter a valid IANA timezone, e.g. Europe/Madrid.",
           );
@@ -270,6 +295,7 @@ function CareHomeForm({ home, onSaved, onCancel }: CareHomeFormProps) {
             onBlur={() => setNameTouched(true)}
             autoFocus
             disabled={mutation.isPending}
+            maxLength={255}
           />
           {nameError ? <p className="mt-1 text-sm text-destructive">{nameError}</p> : null}
         </div>
@@ -283,6 +309,7 @@ function CareHomeForm({ home, onSaved, onCancel }: CareHomeFormProps) {
             onChange={(e) => setAddress(e.target.value)}
             disabled={mutation.isPending}
             placeholder="Optional"
+            maxLength={500}
           />
         </div>
 

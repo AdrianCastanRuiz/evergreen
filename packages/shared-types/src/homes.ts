@@ -19,6 +19,8 @@ export interface CreateHomeRequest {
 
 export interface UpdateHomeRequest {
   name?: string;
-  address?: string;
+  // null clears a previously-set address; undefined/omitted leaves it
+  // untouched (Review Finding, patch — mirrors Story 2.1's dob: null fix).
+  address?: string | null;
   timezone?: string;
 }
