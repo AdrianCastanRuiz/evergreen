@@ -36,7 +36,7 @@ interface NavItem {
 // disabled; this story only scopes the nav by role.
 const NAV_SECTIONS: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "super_admin", "staff"] },
-  { label: "Care homes", icon: Building2, roles: ["super_admin"] },
+  { label: "Care homes", icon: Building2, roles: ["super_admin"], to: "/care-homes" },
   { label: "Users", icon: Users, roles: ["super_admin", "admin"] },
   // admin-only (AC #5) — the backend's ResidentsController is @Roles('admin')
   // only; showing this to staff (Story 1.10's original list) sent them to a
