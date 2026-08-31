@@ -13,6 +13,7 @@ import { TenantModule } from './common/tenant/tenant.module';
 import { envValidationSchema } from './config/env.validation';
 import { HomesModule } from './homes/homes.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ResidentsModule } from './residents/residents.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { PrismaModule } from './prisma/prisma.module';
     TenantModule,
     AuthModule,
     HomesModule,
+    ResidentsModule,
     // Global default; auth endpoints override it with a tighter @Throttle()
     // (NFR10, AD-8).
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 60 }]),

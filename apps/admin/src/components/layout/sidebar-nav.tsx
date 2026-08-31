@@ -9,6 +9,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -19,8 +20,11 @@ interface NavItem {
   icon: LucideIcon;
   roles: Role[];
   /** Portal section isn't routed yet (its epic isn't built) — the entry is
-   * visible but disabled until the real screen ships. */
+   * visible but disabled until the real screen ships. Once a section gets a
+   * real route, set `to` instead and drop `disabled` (Story 2.1 is the
+   * first to do this, for "Residents"). */
   disabled?: boolean;
+  to?: string;
 }
 
 // Role → sections (Story 1.10 AC #3, UX-DR14). Grounded in the epic coverage:
@@ -34,7 +38,10 @@ const NAV_SECTIONS: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "super_admin", "staff"] },
   { label: "Care homes", icon: Building2, roles: ["super_admin"] },
   { label: "Users", icon: Users, roles: ["super_admin", "admin"] },
-  { label: "Residents", icon: Image, roles: ["admin", "staff"] },
+  // admin-only (AC #5) — the backend's ResidentsController is @Roles('admin')
+  // only; showing this to staff (Story 1.10's original list) sent them to a
+  // screen that only ever 403s (Review Finding, patch).
+  { label: "Residents", icon: Image, roles: ["admin"], to: "/residents" },
   { label: "Content", icon: Newspaper, roles: ["admin", "staff"] },
   { label: "Events", icon: CalendarDays, roles: ["admin", "staff"] },
   { label: "Menu", icon: UtensilsCrossed, roles: ["admin", "staff"] },
@@ -63,21 +70,40 @@ export function SidebarNav({ collapsed = false, className }: SidebarNavProps) {
       {items.length === 0 ? (
         <p className="px-4 text-sm text-muted-foreground">No sections available</p>
       ) : (
-        items.map(({ label, icon: Icon, disabled }) => (
-          <button
-            key={label}
-            type="button"
-            disabled={disabled}
-            title={label}
-            className={cn(
-              "flex items-center gap-3 rounded-DEFAULT px-4 py-2 text-left text-foreground/80 transition-colors hover:bg-muted disabled:cursor-default",
-              collapsed && "justify-center px-0",
-            )}
-          >
-            <Icon className="h-5 w-5 shrink-0" aria-hidden />
-            {!collapsed && <span className="text-[15px]">{label}</span>}
-          </button>
-        ))
+        items.map(({ label, icon: Icon, disabled, to }) => {
+          const itemClassName = cn(
+            "flex items-center gap-3 rounded-DEFAULT px-4 py-2 text-left text-foreground/80 transition-colors hover:bg-muted disabled:cursor-default",
+            collapsed && "justify-center px-0",
+          );
+
+          if (to) {
+            return (
+              <Link
+                key={label}
+                to={to}
+                title={label}
+                className={itemClassName}
+                activeProps={{ className: "bg-muted text-foreground" }}
+              >
+                <Icon className="h-5 w-5 shrink-0" aria-hidden />
+                {!collapsed && <span className="text-[15px]">{label}</span>}
+              </Link>
+            );
+          }
+
+          return (
+            <button
+              key={label}
+              type="button"
+              disabled={disabled}
+              title={label}
+              className={itemClassName}
+            >
+              <Icon className="h-5 w-5 shrink-0" aria-hidden />
+              {!collapsed && <span className="text-[15px]">{label}</span>}
+            </button>
+          );
+        })
       )}
     </nav>
   );
