@@ -41,14 +41,14 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-08-06
-last_updated: 2026-08-31 # 1-2 frontend + code review patches complete, status: done
+last_updated: 2026-09-01 # 1-15 code review complete, status: done; epic-1 re-closed
 project: evergreen
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 
 development_status:
-  epic-1: done # re-closed 2026-08-31 — 1-2's frontend gap is now filled
+  epic-1: done # re-closed 2026-09-01 — 1-15's Users screen gap is now filled
   1-1-scaffold-del-proyecto-y-fundacion-multi-tenant: done
   1-2-super-admin-crea-y-gestiona-care-homes: done # reopened+implemented 2026-08-31 — backend was already done, apps/admin frontend never existed for it (apps/admin didn't exist until Story 1.13); see 1-2-super-admin-crea-y-gestiona-care-homes.md
   1-3-super-admin-asigna-home-admins-a-un-care-home: done
@@ -63,6 +63,7 @@ development_status:
   1-12-home-admins-gestionan-usuarios-y-roles-de-su-home: done # issue #26 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/20 (merged)
   1-13-scaffold-real-de-apps-admin-portal-web: done # issue #27 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/19 (merged)
   1-14-login-del-portal-web: done # issue #28 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/22 (merged)
+  1-15-portal-admin-gestiona-usuarios: done # issue #34 — fix: Users screen frontend for 1.3/1.4/1.5/1.12 (backend already done) — see 1-15-portal-admin-gestiona-usuarios.md
   epic-1-retrospective: done # 2026-08-26 — see epic-1-retro-2026-08-26.md
 
   epic-2: in-progress

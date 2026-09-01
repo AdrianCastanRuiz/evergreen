@@ -24,3 +24,9 @@ export interface UpdateHomeRequest {
   address?: string | null;
   timezone?: string;
 }
+
+// Story 1.3: POST /homes/:id/admins — super_admin invites a home admin to
+// this specific home. Response is PendingUserResponse (users.ts).
+export interface InviteHomeAdminRequest {
+  email: string;
+}
