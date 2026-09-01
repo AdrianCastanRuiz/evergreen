@@ -6,9 +6,10 @@ import { loginRoute } from "@/routes/login";
 import { protectedLayoutRoute } from "@/routes/protected-layout";
 import { residentsRoute } from "@/routes/residents";
 import { rootRoute } from "@/routes/root";
+import { usersRoute } from "@/routes/users";
 
 const routeTree = rootRoute.addChildren([
-  protectedLayoutRoute.addChildren([indexRoute, residentsRoute, careHomesRoute]),
+  protectedLayoutRoute.addChildren([indexRoute, residentsRoute, careHomesRoute, usersRoute]),
   loginRoute,
 ]);
 

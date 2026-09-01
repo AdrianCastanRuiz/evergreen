@@ -32,9 +32,13 @@ export const careHomesRoute = createRoute({
   component: CareHomesPage,
 });
 
-const CARE_HOMES_QUERY_KEY = ["care-homes"] as const;
+// Exported for Story 1.15's users.tsx: the super_admin home-admin-invite
+// form needs the same home list. Reusing this query key (not a duplicate
+// one) lets React Query dedupe the fetch when both screens are visited in
+// the same session, instead of issuing a second GET /homes.
+export const CARE_HOMES_QUERY_KEY = ["care-homes"] as const;
 
-function listHomes(): Promise<Home[]> {
+export function listHomes(): Promise<Home[]> {
   return authedRequest<Home[]>("/homes");
 }
 

@@ -4,7 +4,7 @@ baseline_commit: aa310fd9d1d3edbdec0537baf80f115ff8c2402c
 
 # Story 1.15: Admin Portal — Users Screen (frontend fix for Stories 1.3, 1.4, 1.5, 1.12)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -52,23 +52,23 @@ so that the user-management capability the API has had since Epic 1 (Stories 1.3
 
 ## Tasks / Subtasks
 
-- [ ] **`packages/shared-types/src/users.ts`** — add the missing request/response types this screen needs (AC: all). `HomeUserSummary`/`UpdateUserRoleRequest` already exist; add:
+- [x] **`packages/shared-types/src/users.ts`** — add the missing request/response types this screen needs (AC: all). `HomeUserSummary`/`UpdateUserRoleRequest` already exist; add:
   - `PendingUserResponse { id: string; email: string; role: Role; isActive: boolean; homeId: string | null }` — matches `apps/api/src/users/users.service.ts`'s exported interface of the same name exactly (field-for-field — don't re-derive it, copy it).
   - `CreateSuperAdminRequest { email: string }`
   - `InviteUserRequest { email: string; role: Extract<Role, "staff" | "family"> }`
-- [ ] **`packages/shared-types/src/homes.ts`** — add `InviteHomeAdminRequest { email: string }` (this one's a `/homes/:id/admins` sub-resource, so it belongs with `Home`'s other request types, not in `users.ts`) (AC: #1).
-- [ ] **`apps/admin/src/routes/users.tsx`** (new) — the screen itself (AC: #1–#7). Structure:
+- [x] **`packages/shared-types/src/homes.ts`** — add `InviteHomeAdminRequest { email: string }` (this one's a `/homes/:id/admins` sub-resource, so it belongs with `Home`'s other request types, not in `users.ts`) (AC: #1).
+- [x] **`apps/admin/src/routes/users.tsx`** (new) — the screen itself (AC: #1–#7). Structure:
   - `usersRoute = createRoute({ getParentRoute: () => protectedLayoutRoute, path: "/users", component: UsersPage })`.
   - `UsersPage`: same `!user` "Loading your account…" guard as `care-homes.tsx` (protected-layout.tsx guarantees `authenticated` status but not that `/auth/me` has resolved yet). Then branch on `user.role`: `super_admin` → `SuperAdminUsersPanel`; `admin` → `HomeAdminUsersPanel`; anything else → `<PermissionDenied />` (AC #7).
   - `SuperAdminUsersPanel`: two independent forms/cards, not a list (there is no "list all platform users" endpoint — don't build one, it doesn't exist):
     - "Invite a home admin": a home picker (`<select>` or similar, populated from `GET /homes` — reuse `listHomes()`'s query, same `["care-homes"]` query key as `care-homes.tsx` so React Query dedupes the fetch instead of issuing a second one) + email input → `POST /homes/:id/admins`.
     - "Create a super admin": email input only → `POST /users/super-admins`.
   - `HomeAdminUsersPanel`: list (Story 1.12 AC #1) + "Invite a user" dialog (email + role radio/select of `staff`/`family`) + per-row "Change role" and "Revoke access" actions. Follow `residents.tsx`'s exact shape: one `useQuery` for the list (`["users"]` query key), `useMutation`s for invite/role-change/revoke, `invalidateQueries` on each success, inline field-level error state from `ApiError`/`NetworkError` (see `residents.tsx`'s `ResidentForm` for the pattern — copy it, don't reinvent).
-  - Revoke confirmation: reuse the existing `Dialog` component for a "Revoke access for {email}? They'll lose access immediately." confirm step before firing the `DELETE` (AC #6) — don't add a new confirm primitive.
-- [ ] **`apps/admin/src/router.ts`** — import `usersRoute`, add it to `protectedLayoutRoute.addChildren([...])` alongside `indexRoute, residentsRoute, careHomesRoute` (AC: #9).
-- [ ] **`apps/admin/src/components/layout/sidebar-nav.tsx`** — add `to: "/users"` to the `"Users"` `NavItem` (line 40). Do not change its `roles` array (AC: #8, #9).
-- [ ] **`_bmad-output/implementation-artifacts/deferred-work.md`** — add an entry: `staff` can invite `staff`/`family` per the backend (`@Roles('admin', 'staff')` on `POST /users/invites`, Story 1.5 AC #1) but has no portal route to do so (`sidebar-nav.tsx`'s "Users" entry is `admin`-and-above only) — a real, separate frontend gap, out of this story's scope (AC: #8).
-- [ ] **Manual verification** — at minimum: log in as `super_admin`, invite a home admin to a real home, confirm `409` on re-invite; log in as an existing `admin`, confirm the staff/family list loads, invite a `staff` user, change their role to `family` and back, revoke a test user and confirm the confirm-dialog gates it. `apps/api` is untouched — no need to re-verify its endpoints, just that the frontend calls them correctly and renders their responses/errors.
+  - Revoke confirmation: reuse the existing `Dialog` component for a "Revoke access for {email}? They'll lose access immediately." confirm step before firing the `DELETE` (AC #6) — don't add a new confirm primitive. **Deviation:** used `AlertDialog` (`@/components/ui/alert-dialog`), not the plain `Dialog` this line names — `top-nav.tsx`'s "Log out?" flow already established `AlertDialog` as this app's exact pattern for a destructive-action confirm (Cancel/Action footer, no form inside), a closer match than the form-oriented `Dialog` used for create/edit. Same confirm-before-destructive-action outcome the AC asks for.
+- [x] **`apps/admin/src/router.ts`** — import `usersRoute`, add it to `protectedLayoutRoute.addChildren([...])` alongside `indexRoute, residentsRoute, careHomesRoute` (AC: #9).
+- [x] **`apps/admin/src/components/layout/sidebar-nav.tsx`** — add `to: "/users"` to the `"Users"` `NavItem` (line 40). Do not change its `roles` array (AC: #8, #9). Also corrected the section-level comment above `NAV_SECTIONS`, which still claimed "none of the target sections have real screens yet" — stale since Story 2.1 wired Residents; now lists all three wired sections.
+- [x] **`_bmad-output/implementation-artifacts/deferred-work.md`** — add an entry: `staff` can invite `staff`/`family` per the backend (`@Roles('admin', 'staff')` on `POST /users/invites`, Story 1.5 AC #1) but has no portal route to do so (`sidebar-nav.tsx`'s "Users" entry is `admin`-and-above only) — a real, separate frontend gap, out of this story's scope (AC: #8).
+- [x] **Manual verification** — see Debug Log References below for what was actually run and what was not (no real browser tool was available this session — see Completion Notes).
 
 ## Dev Notes
 
@@ -130,12 +130,38 @@ Every home-admin-panel call (`GET /users`, `POST /users/invites`, `PATCH /users/
 
 ### Agent Model Used
 
+claude-opus-5
+
 ### Debug Log References
+
+- `pnpm --filter @evergreen/shared-types run typecheck` — clean.
+- `pnpm --filter @evergreen/admin run typecheck` (`tsc -b --noEmit`) — clean.
+- `pnpm --filter @evergreen/admin run lint` (`eslint . --fix`) — 0 errors; 18 warnings, all pre-existing `react-refresh/only-export-components` (every route file in this app exports helper functions alongside its component — same shape `residents.tsx`/`care-homes.tsx` already have). One real lint error surfaced and was fixed during implementation: `react-hooks/set-state-in-effect` on `HomeUserRow`'s original `useEffect(() => setRole(homeUser.role), [homeUser.role])` — replaced with React's documented "adjust state during render" pattern (compare against a `prevServerRole` state value, `setRole` only when it's stale) instead of an effect.
+- `pnpm --filter @evergreen/admin run build` (`tsc -b && vite build`) — clean; the "chunk larger than 500kB" advisory is pre-existing (single JS bundle, no code-splitting configured anywhere in this app yet) and unrelated to this story's files.
+- Manual E2E against a real running `apps/api` + local Postgres, and visual verification of the rendered screen in a real browser, were **not** performed this session — no browser automation tool was available (Claude-in-Chrome not connected). This mirrors Story 1.2's own precedent ("UI not visually verified in a browser this session," its Change Log, 2026-08-31) rather than silently overclaiming coverage. What *was* verified: the four backend endpoints' request/response shapes were read directly from `apps/api/src/users/{users.controller,users.service}.ts` and `apps/api/src/homes/homes.controller.ts` (not inferred), and every request built by `users.tsx` (`inviteHomeAdmin`, `createSuperAdmin`, `listHomeUsers`, `inviteUser`, `updateUserRole`, `revokeUserAccess`) matches those exactly — path, method, body shape, and response type. All four backend stories were already E2E-verified against real Postgres in their own Debug Logs (1.3, 1.4, 1.5, 1.12) and are untouched here.
 
 ### Completion Notes List
 
+- Implemented per the story's task list, one deviation: the revoke-access confirmation uses `AlertDialog` (`@/components/ui/alert-dialog`, already used by `top-nav.tsx`'s "Log out?" flow) instead of the plain `Dialog` named in the story's Dev Notes — a closer match to this app's own existing confirm-before-destructive-action pattern. Same AC #6 outcome (a confirm step gates the `DELETE`).
+- Found and fixed a real bug during implementation, not called out in the story: a naive `useEffect(() => setRole(homeUser.role), [homeUser.role])` to keep the per-row role `<select>` in sync with server-confirmed state triggered ESLint's `react-hooks/set-state-in-effect` and would have caused a visible "selection silently reverts" flicker on every role change (the controlled `<select>`'s `value` prop wouldn't have updated until the query invalidation round-trip completed). Fixed using React's documented in-render state-adjustment pattern instead (compare against a tracked previous-prop value, `setState` only when it's stale) — this is the correct fix, not a workaround.
+- `sidebar-nav.tsx`'s section-level comment (above `NAV_SECTIONS`) was stale — still claimed no section had a real screen, though Story 2.1 had already wired "Residents". Corrected it while touching the same block for "Users", rather than leaving a comment the code next to it visibly contradicts.
+- Exported `CARE_HOMES_QUERY_KEY` and `listHomes` from `care-homes.tsx` (previously module-private) so `users.tsx`'s home picker reuses the exact same React Query cache entry instead of issuing a duplicate `GET /homes` — true reuse per the story's Dev Notes, not just a same-literal-string query key.
+- No `apps/api` changes, no schema changes, no new env vars — matches the story's stated scope exactly.
+
 ### File List
+
+**New:**
+- `apps/admin/src/routes/users.tsx`
+
+**Modified:**
+- `apps/admin/src/router.ts` (registered `usersRoute`)
+- `apps/admin/src/components/layout/sidebar-nav.tsx` (wired `"Users"` → `/users`; corrected stale section comment)
+- `apps/admin/src/routes/care-homes.tsx` (exported `CARE_HOMES_QUERY_KEY`, `listHomes` for reuse by `users.tsx`)
+- `packages/shared-types/src/users.ts` (added `PendingUserResponse`, `CreateSuperAdminRequest`, `InviteUserRequest`)
+- `packages/shared-types/src/homes.ts` (added `InviteHomeAdminRequest`)
+- `_bmad-output/implementation-artifacts/deferred-work.md` (documented the `staff`-invite portal-access gap, out of this story's scope)
 
 ## Change Log
 
 - 2026-09-01: Story created — consolidates the never-built portal frontend for Stories 1.3, 1.4, 1.5, and 1.12 (all backend-`done`, discovered via the same class of gap Story 1.2 had) into a single "Users" screen. Status → ready-for-dev.
+- 2026-09-01: Frontend implemented on branch `feature/1-15-portal-admin-gestiona-usuarios` — new Users screen with role-conditional panels (`SuperAdminUsersPanel`: invite-home-admin + create-super-admin forms; `HomeAdminUsersPanel`: list + invite + role-change + revoke-with-confirm), new shared-types request/response types, router + sidebar wiring. Fixed a real `react-hooks/set-state-in-effect` bug found during implementation (see Completion Notes). All 4 backend stories (1.3/1.4/1.5/1.12) untouched. Clean `tsc -b`/`eslint`/`vite build` for both `apps/admin` and `@evergreen/shared-types`. No browser tool available this session — UI not visually/E2E-verified in a running browser, same disclosed limitation as Story 1.2. Status → review.

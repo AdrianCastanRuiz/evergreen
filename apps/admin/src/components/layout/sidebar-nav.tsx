@@ -31,13 +31,13 @@ interface NavItem {
 // super_admin manages homes + platform users + metrics (FR47/48/49/54); home
 // admin manages their own home's users/residents/content/events/menu + home
 // metrics (FR12/50/51/22/34/53/55); staff uploads/manages content for their
-// home but never user/role management (AD-12). None of the target sections
-// have real screens yet — the epics ship them — so every entry is currently
-// disabled; this story only scopes the nav by role.
+// home but never user/role management (AD-12). Sections without a real
+// screen yet stay disabled (no `to`) until their epic ships one — "Care
+// homes"/"Residents"/"Users" are wired (Stories 1.2, 2.1, 1.15).
 const NAV_SECTIONS: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "super_admin", "staff"] },
   { label: "Care homes", icon: Building2, roles: ["super_admin"], to: "/care-homes" },
-  { label: "Users", icon: Users, roles: ["super_admin", "admin"] },
+  { label: "Users", icon: Users, roles: ["super_admin", "admin"], to: "/users" },
   // admin-only (AC #5) — the backend's ResidentsController is @Roles('admin')
   // only; showing this to staff (Story 1.10's original list) sent them to a
   // screen that only ever 403s (Review Finding, patch).
