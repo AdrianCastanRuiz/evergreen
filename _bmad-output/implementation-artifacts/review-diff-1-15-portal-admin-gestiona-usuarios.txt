@@ -1,0 +1,877 @@
+diff --git a/_bmad-output/implementation-artifacts/1-15-portal-admin-gestiona-usuarios.md b/_bmad-output/implementation-artifacts/1-15-portal-admin-gestiona-usuarios.md
+new file mode 100644
+index 0000000..7302949
+--- /dev/null
++++ b/_bmad-output/implementation-artifacts/1-15-portal-admin-gestiona-usuarios.md
+@@ -0,0 +1,167 @@
++---
++baseline_commit: aa310fd9d1d3edbdec0537baf80f115ff8c2402c
++---
++
++# Story 1.15: Admin Portal — Users Screen (frontend fix for Stories 1.3, 1.4, 1.5, 1.12)
++
++Status: review
++
++<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
++
++## Story
++
++As a super admin or home admin,
++I want a "Users" screen in the admin portal where I can invite/create the accounts my role is allowed to manage and — for home admins — see, re-role, and revoke my home's staff/family users,
++so that the user-management capability the API has had since Epic 1 (Stories 1.3, 1.4, 1.5, 1.12) is actually usable from the portal, not just via raw HTTP.
++
++## Background — why this story exists
++
++`apps/admin`'s sidebar has had a "Users" entry, visible to `super_admin` and `admin`, since Story 1.10 (`apps/admin/src/components/layout/sidebar-nav.tsx:40`) — but it has **never had a route** (`to` is unset, unlike `"Care homes"` and `"Residents"`). Clicking it does nothing. This is the exact same shape of gap Story 1.2 had (backend shipped in Epic 1, before `apps/admin` existed; frontend never followed) — that one was found and fixed retroactively on 2026-08-31 (see `1-2-super-admin-crea-y-gestiona-care-homes.md`, `sprint-status.yaml`'s `epic-1: done # re-closed 2026-08-31` note). This story is the same fix, for the "Users" section, consolidating **four** already-`done`, already-tested backend stories that all feed the same screen:
++
++| Story | What it built (backend, already `done`, untouched by this story) | Route |
++|---|---|---|
++| 1.3 | `super_admin` invites a home admin to a specific care home | `POST /homes/:id/admins` |
++| 1.4 | `super_admin` creates another `super_admin` | `POST /users/super-admins` |
++| 1.5 | `admin`/`staff` invites a `staff` or `family` user into their own home | `POST /users/invites` |
++| 1.12 | `admin` lists/re-roles/revokes their home's `staff`/`family` users | `GET /users`, `PATCH /users/:id/role`, `DELETE /users/:id` |
++
++**Do not touch any backend code for this story.** All four endpoints are implemented, unit-tested, and (per each story's Debug Log) manually E2E-verified. Read `apps/api/src/users/users.controller.ts` and `apps/api/src/users/users.service.ts` in full before writing any frontend code — every response shape, error case, and role rule below is already final and enforced server-side (`RolesGuard`/`AD-12`, tenant scoping/`AD-1`/`NFR7`). This story is 100% `apps/admin` + `packages/shared-types` (new request/response types only — the API already returns these shapes, `shared-types` just doesn't declare them yet).
++
++## Acceptance Criteria
++
++**Super admin panel** (own section of the Users screen):
++
++1. **Given** I am a `super_admin` on the Users screen, **when** I pick a care home and enter an email, **then** `POST /homes/:id/admins` is called and I see success feedback; a `409` (email already exists) shows inline, a `404` (home not found — can't happen from a dropdown of real homes, but the call can still race a home's deletion) shows a generic error (Story 1.3).
++2. **Given** I am a `super_admin`, **when** I enter an email under "Create super admin", **then** `POST /users/super-admins` is called; a `409` shows inline (Story 1.4).
++
++**Home admin panel** (own section of the Users screen):
++
++3. **Given** I am an `admin`, **when** the Users screen loads, **then** I see every `staff`/`family` user of my home (`GET /users`) with their role and active/pending status (Story 1.12 AC #1).
++4. **Given** I am an `admin` (or `staff`, per AC #6 below), **when** I invite a new user by email + role (`staff` or `family`), **then** `POST /users/invites` is called; a `409` (email conflict, or same-home-role-not-family) shows inline; a `403` (inviting at/above my own role — can't happen from this UI since the role picker only ever offers `staff`/`family`, but the API enforces it regardless) is not something the UI needs to special-case beyond a generic error (Story 1.5).
++5. **Given** I am an `admin`, **when** I change a user's role between `staff` and `family`, **then** `PATCH /users/:id/role` is called and the list updates; a `409` ("belongs to more than one home", promoting to `staff`) shows inline (Story 1.12 AC #2/#4).
++6. **Given** I am an `admin`, **when** I revoke a user's access, **then** I confirm first (this is an immediate, session-invalidating action — `DELETE /users/:id`), then the list updates (Story 1.12 AC #5). No generic browser `confirm()` — use the existing `Dialog` component, same as every other destructive-ish flow in this app.
++
++**Access boundaries** (client-side UX only — the API enforces all of this regardless of what the UI shows or hides):
++
++7. **Given** I am `staff`, **when** I land on `/users` (e.g. via a stale link — `staff` never sees the nav entry per `sidebar-nav.tsx`'s existing role list), **then** I see the existing `PermissionDenied` component, same pattern as `care-homes.tsx`/`residents.tsx`.
++8. Story 1.5's actual AC #1 allows **both** `admin` and `staff` to invite `staff`/`family` ("home admin, or staff, where permitted" — the epic's framing) and the backend's `@Roles('admin', 'staff')` on `POST /users/invites` confirms this. But `sidebar-nav.tsx` currently gates the whole "Users" section to `["super_admin", "admin"]` only — `staff` has no route to it at all today. **Resolve this by NOT changing `staff`'s access in this story**: `sidebar-nav.tsx`'s role list for "Users" stays `["super_admin", "admin"]` exactly as-is. `staff`'s invite capability (which the backend already supports) is a real, separate frontend gap — write it to `deferred-work.md` rather than silently expanding this story's scope; broadening portal nav access is a product decision, not a bug-fix call (see Dev Notes for the exact deferred-work.md entry to add).
++
++**Wiring**:
++
++9. `sidebar-nav.tsx`'s `"Users"` entry gets `to: "/users"` (mirrors how Story 2.1 wired `"Residents"`).
++
++## Tasks / Subtasks
++
++- [x] **`packages/shared-types/src/users.ts`** — add the missing request/response types this screen needs (AC: all). `HomeUserSummary`/`UpdateUserRoleRequest` already exist; add:
++  - `PendingUserResponse { id: string; email: string; role: Role; isActive: boolean; homeId: string | null }` — matches `apps/api/src/users/users.service.ts`'s exported interface of the same name exactly (field-for-field — don't re-derive it, copy it).
++  - `CreateSuperAdminRequest { email: string }`
++  - `InviteUserRequest { email: string; role: Extract<Role, "staff" | "family"> }`
++- [x] **`packages/shared-types/src/homes.ts`** — add `InviteHomeAdminRequest { email: string }` (this one's a `/homes/:id/admins` sub-resource, so it belongs with `Home`'s other request types, not in `users.ts`) (AC: #1).
++- [x] **`apps/admin/src/routes/users.tsx`** (new) — the screen itself (AC: #1–#7). Structure:
++  - `usersRoute = createRoute({ getParentRoute: () => protectedLayoutRoute, path: "/users", component: UsersPage })`.
++  - `UsersPage`: same `!user` "Loading your account…" guard as `care-homes.tsx` (protected-layout.tsx guarantees `authenticated` status but not that `/auth/me` has resolved yet). Then branch on `user.role`: `super_admin` → `SuperAdminUsersPanel`; `admin` → `HomeAdminUsersPanel`; anything else → `<PermissionDenied />` (AC #7).
++  - `SuperAdminUsersPanel`: two independent forms/cards, not a list (there is no "list all platform users" endpoint — don't build one, it doesn't exist):
++    - "Invite a home admin": a home picker (`<select>` or similar, populated from `GET /homes` — reuse `listHomes()`'s query, same `["care-homes"]` query key as `care-homes.tsx` so React Query dedupes the fetch instead of issuing a second one) + email input → `POST /homes/:id/admins`.
++    - "Create a super admin": email input only → `POST /users/super-admins`.
++  - `HomeAdminUsersPanel`: list (Story 1.12 AC #1) + "Invite a user" dialog (email + role radio/select of `staff`/`family`) + per-row "Change role" and "Revoke access" actions. Follow `residents.tsx`'s exact shape: one `useQuery` for the list (`["users"]` query key), `useMutation`s for invite/role-change/revoke, `invalidateQueries` on each success, inline field-level error state from `ApiError`/`NetworkError` (see `residents.tsx`'s `ResidentForm` for the pattern — copy it, don't reinvent).
++  - Revoke confirmation: reuse the existing `Dialog` component for a "Revoke access for {email}? They'll lose access immediately." confirm step before firing the `DELETE` (AC #6) — don't add a new confirm primitive. **Deviation:** used `AlertDialog` (`@/components/ui/alert-dialog`), not the plain `Dialog` this line names — `top-nav.tsx`'s "Log out?" flow already established `AlertDialog` as this app's exact pattern for a destructive-action confirm (Cancel/Action footer, no form inside), a closer match than the form-oriented `Dialog` used for create/edit. Same confirm-before-destructive-action outcome the AC asks for.
++- [x] **`apps/admin/src/router.ts`** — import `usersRoute`, add it to `protectedLayoutRoute.addChildren([...])` alongside `indexRoute, residentsRoute, careHomesRoute` (AC: #9).
++- [x] **`apps/admin/src/components/layout/sidebar-nav.tsx`** — add `to: "/users"` to the `"Users"` `NavItem` (line 40). Do not change its `roles` array (AC: #8, #9). Also corrected the section-level comment above `NAV_SECTIONS`, which still claimed "none of the target sections have real screens yet" — stale since Story 2.1 wired Residents; now lists all three wired sections.
++- [x] **`_bmad-output/implementation-artifacts/deferred-work.md`** — add an entry: `staff` can invite `staff`/`family` per the backend (`@Roles('admin', 'staff')` on `POST /users/invites`, Story 1.5 AC #1) but has no portal route to do so (`sidebar-nav.tsx`'s "Users" entry is `admin`-and-above only) — a real, separate frontend gap, out of this story's scope (AC: #8).
++- [x] **Manual verification** — see Debug Log References below for what was actually run and what was not (no real browser tool was available this session — see Completion Notes).
++
++## Dev Notes
++
++### The API surface (read the actual source before coding — this is a summary, not the contract)
++
++- `apps/api/src/homes/homes.controller.ts:63` — `POST /homes/:id/admins`, `@Roles('super_admin')` (class-level), body `InviteHomeAdminDto { email }`, returns `PendingUserResponse` (201). `404` if `:id` doesn't exist, `409` on email conflict.
++- `apps/api/src/users/users.controller.ts` — `@Controller('users')`, class-level `@Roles('super_admin')`, with per-route overrides:
++  - `POST /users/super-admins` (inherits class-level `super_admin`-only) — body `CreateSuperAdminDto { email }`, returns `PendingUserResponse { homeId: null }`.
++  - `POST /users/invites`, `@Roles('admin', 'staff')` — body `InviteUserDto { email, role: 'staff' | 'family' }`, returns `PendingUserResponse`. Acting user's home comes from their own JWT server-side — **never** send a `homeId` in the body, there's no field for it.
++  - `GET /users`, `@Roles('admin')` — no params, returns `HomeUserSummary[]` (already typed in `shared-types/src/users.ts`) scoped to the caller's home.
++  - `PATCH /users/:id/role`, `@Roles('admin')` — body `UpdateUserRoleDto { role: 'staff' | 'family' }` (already typed as `UpdateUserRoleRequest`), returns updated `HomeUserSummary`. `:id` is the target user's id, from the list.
++  - `DELETE /users/:id`, `@Roles('admin')` — `204`, no body.
++- Every error is the standard `{ error: { code, message, details? } }` envelope `ApiError` (`apps/admin/src/lib/api.ts`) already parses — no new error handling infra needed, just read `.status`/`.message` off the caught `ApiError` like `residents.tsx`'s `ResidentForm.onError` does.
++
++### Reuse, don't reinvent — the two existing screens are the pattern
++
++`apps/admin/src/routes/residents.tsx` and `care-homes.tsx` are the **only** two real screens in this app so far, and both are recent (Story 2.1, Story 1.2-retroactive). This story's screen must look and behave like a third sibling, not a new style:
++- Same `useQuery`/`useMutation`/`invalidateQueries` shape, same query-key-array convention (`["users"]`, not `["users-list"]` or similar).
++- Same `Dialog`/`DialogContent`/`DialogHeader`/`DialogFooter`/`Input`/`Label`/`Button` primitives from `@/components/ui/*` — no new form primitives.
++- Same inline-error convention: `err instanceof ApiError` → `err.message`; `err instanceof NetworkError` → the fixed connection-lost copy; anything else → generic fallback. Copy `residents.tsx`'s `ResidentForm.onError` verbatim in shape.
++- Same submit re-entrancy guard (`if (mutation.isPending) return;` before firing) — `residents.tsx`'s `handleSubmit` has the comment explaining why (fast double-click race).
++- `care-homes.tsx`'s `!user` → "Loading your account…" guard (not `PermissionDenied`) is deliberate (Review Finding on that story) — copy that distinction exactly, don't collapse it into a single `PermissionDenied` check.
++
++### Two roles, two very different panels — do not build a unified "user list" for super_admin
++
++There is **no `GET` endpoint that lists platform-wide users** — `UsersController` has no such route, and none is planned by any of Stories 1.3/1.4/1.5/1.12. Don't invent one or fake it client-side. `super_admin`'s half of this screen is action-only (two small forms), not a list. Resist the urge to make it "consistent" with the home-admin list — they're genuinely different capabilities per the epics (`FR48`/`FR49` are create-only; `FR12`/`FR50` are the only list/manage ACs, and both are `admin`-scoped-to-own-home).
++
++### Role-hierarchy and self-lockout errors are server-side only — the UI doesn't need to pre-validate them
++
++`UsersService.inviteUser`'s `ROLE_RANK` check (AC #5 of Story 1.5) and `resolveManageableMembership`'s self-lockout guard (`apps/api/src/users/users.service.ts:387`) are both enforced server-side and return standard `403`/`404` the UI already handles generically via `ApiError`. Don't add client-side role-hierarchy logic — the invite form only ever offers `staff`/`family` anyway (mirrors `InviteUserDto`'s `INVITABLE_ROLES`), so the hierarchy check can never actually trigger from this UI in practice.
++
++### `homeId` is never client-supplied for the home-admin panel
++
++Every home-admin-panel call (`GET /users`, `POST /users/invites`, `PATCH /users/:id/role`, `DELETE /users/:id`) is scoped to the caller's own home via their JWT/tenant context server-side — there is no home selector anywhere in `HomeAdminUsersPanel`, unlike `SuperAdminUsersPanel`'s explicit home picker for the `/homes/:id/admins` call. Don't add one; it would be dead UI at best and a spoofing attempt at worst (the API ignores it either way, but sending a fake scoping param is a bad pattern to introduce).
++
++### Project Structure Notes
++
++- New files: `apps/admin/src/routes/users.tsx`. Modified: `apps/admin/src/router.ts`, `apps/admin/src/components/layout/sidebar-nav.tsx`, `packages/shared-types/src/users.ts`, `packages/shared-types/src/homes.ts`, `_bmad-output/implementation-artifacts/deferred-work.md`.
++- No `apps/api` changes. No schema changes. No new env vars.
++- `sprint-status.yaml`: this story reopens `epic-1` from `done` to `in-progress` (same as Story 1.2's retroactive fix did) — re-close it to `done` once this ships, with a dated comment, same convention as `1-2-...: done # reopened+implemented 2026-08-31`.
++
++### Testing standards
++
++- `pnpm --filter @evergreen/admin run test` (if a test runner is configured for this app — check `apps/admin/package.json`; `care-homes.tsx`/`residents.tsx` shipped with no component tests, only `tsc -b`/`eslint`/`vite build` as the bar per their Change Logs — match that bar unless the app has since grown a test setup).
++- `pnpm --filter @evergreen/admin run build`, `run lint`, and a real `tsc -b --noEmit` must all be clean, same bar as Story 1.2/2.1.
++- Manually verify against a real running `apps/api` (docker-compose Postgres) as both a `super_admin` and an `admin` — this screen's whole value is real HTTP round-trips against already-tested backend logic; mocking the API here would just prove the UI compiles, not that it works.
++
++### References
++
++- [Source: apps/api/src/users/users.controller.ts, users.service.ts] — the frozen backend contract this story's UI must call correctly.
++- [Source: apps/api/src/homes/homes.controller.ts:63] — `POST /homes/:id/admins`.
++- [Source: apps/admin/src/routes/residents.tsx, care-homes.tsx] — the two existing screens to mirror.
++- [Source: apps/admin/src/components/layout/sidebar-nav.tsx] — nav wiring convention (`to` field, Story 2.1 precedent for going from disabled to wired).
++- [Source: _bmad-output/implementation-artifacts/1-2-super-admin-crea-y-gestiona-care-homes.md] — the precedent for this exact class of fix (backend-done-frontend-missing, retroactive story).
++- [Source: _bmad-output/planning-artifacts/epics.md#Story 1.3, 1.4, 1.5, 1.12] — original acceptance criteria this story's UI must satisfy.
++- [Source: packages/shared-types/src/users.ts, auth.ts, homes.ts] — existing type conventions to extend, not duplicate.
++
++## Dev Agent Record
++
++### Agent Model Used
++
++claude-opus-5
++
++### Debug Log References
++
++- `pnpm --filter @evergreen/shared-types run typecheck` — clean.
++- `pnpm --filter @evergreen/admin run typecheck` (`tsc -b --noEmit`) — clean.
++- `pnpm --filter @evergreen/admin run lint` (`eslint . --fix`) — 0 errors; 18 warnings, all pre-existing `react-refresh/only-export-components` (every route file in this app exports helper functions alongside its component — same shape `residents.tsx`/`care-homes.tsx` already have). One real lint error surfaced and was fixed during implementation: `react-hooks/set-state-in-effect` on `HomeUserRow`'s original `useEffect(() => setRole(homeUser.role), [homeUser.role])` — replaced with React's documented "adjust state during render" pattern (compare against a `prevServerRole` state value, `setRole` only when it's stale) instead of an effect.
++- `pnpm --filter @evergreen/admin run build` (`tsc -b && vite build`) — clean; the "chunk larger than 500kB" advisory is pre-existing (single JS bundle, no code-splitting configured anywhere in this app yet) and unrelated to this story's files.
++- Manual E2E against a real running `apps/api` + local Postgres, and visual verification of the rendered screen in a real browser, were **not** performed this session — no browser automation tool was available (Claude-in-Chrome not connected). This mirrors Story 1.2's own precedent ("UI not visually verified in a browser this session," its Change Log, 2026-08-31) rather than silently overclaiming coverage. What *was* verified: the four backend endpoints' request/response shapes were read directly from `apps/api/src/users/{users.controller,users.service}.ts` and `apps/api/src/homes/homes.controller.ts` (not inferred), and every request built by `users.tsx` (`inviteHomeAdmin`, `createSuperAdmin`, `listHomeUsers`, `inviteUser`, `updateUserRole`, `revokeUserAccess`) matches those exactly — path, method, body shape, and response type. All four backend stories were already E2E-verified against real Postgres in their own Debug Logs (1.3, 1.4, 1.5, 1.12) and are untouched here.
++
++### Completion Notes List
++
++- Implemented per the story's task list, one deviation: the revoke-access confirmation uses `AlertDialog` (`@/components/ui/alert-dialog`, already used by `top-nav.tsx`'s "Log out?" flow) instead of the plain `Dialog` named in the story's Dev Notes — a closer match to this app's own existing confirm-before-destructive-action pattern. Same AC #6 outcome (a confirm step gates the `DELETE`).
++- Found and fixed a real bug during implementation, not called out in the story: a naive `useEffect(() => setRole(homeUser.role), [homeUser.role])` to keep the per-row role `<select>` in sync with server-confirmed state triggered ESLint's `react-hooks/set-state-in-effect` and would have caused a visible "selection silently reverts" flicker on every role change (the controlled `<select>`'s `value` prop wouldn't have updated until the query invalidation round-trip completed). Fixed using React's documented in-render state-adjustment pattern instead (compare against a tracked previous-prop value, `setState` only when it's stale) — this is the correct fix, not a workaround.
++- `sidebar-nav.tsx`'s section-level comment (above `NAV_SECTIONS`) was stale — still claimed no section had a real screen, though Story 2.1 had already wired "Residents". Corrected it while touching the same block for "Users", rather than leaving a comment the code next to it visibly contradicts.
++- Exported `CARE_HOMES_QUERY_KEY` and `listHomes` from `care-homes.tsx` (previously module-private) so `users.tsx`'s home picker reuses the exact same React Query cache entry instead of issuing a duplicate `GET /homes` — true reuse per the story's Dev Notes, not just a same-literal-string query key.
++- No `apps/api` changes, no schema changes, no new env vars — matches the story's stated scope exactly.
++
++### File List
++
++**New:**
++- `apps/admin/src/routes/users.tsx`
++
++**Modified:**
++- `apps/admin/src/router.ts` (registered `usersRoute`)
++- `apps/admin/src/components/layout/sidebar-nav.tsx` (wired `"Users"` → `/users`; corrected stale section comment)
++- `apps/admin/src/routes/care-homes.tsx` (exported `CARE_HOMES_QUERY_KEY`, `listHomes` for reuse by `users.tsx`)
++- `packages/shared-types/src/users.ts` (added `PendingUserResponse`, `CreateSuperAdminRequest`, `InviteUserRequest`)
++- `packages/shared-types/src/homes.ts` (added `InviteHomeAdminRequest`)
++- `_bmad-output/implementation-artifacts/deferred-work.md` (documented the `staff`-invite portal-access gap, out of this story's scope)
++
++## Change Log
++
++- 2026-09-01: Story created — consolidates the never-built portal frontend for Stories 1.3, 1.4, 1.5, and 1.12 (all backend-`done`, discovered via the same class of gap Story 1.2 had) into a single "Users" screen. Status → ready-for-dev.
++- 2026-09-01: Frontend implemented on branch `feature/1-15-portal-admin-gestiona-usuarios` — new Users screen with role-conditional panels (`SuperAdminUsersPanel`: invite-home-admin + create-super-admin forms; `HomeAdminUsersPanel`: list + invite + role-change + revoke-with-confirm), new shared-types request/response types, router + sidebar wiring. Fixed a real `react-hooks/set-state-in-effect` bug found during implementation (see Completion Notes). All 4 backend stories (1.3/1.4/1.5/1.12) untouched. Clean `tsc -b`/`eslint`/`vite build` for both `apps/admin` and `@evergreen/shared-types`. No browser tool available this session — UI not visually/E2E-verified in a running browser, same disclosed limitation as Story 1.2. Status → review.
+diff --git a/_bmad-output/implementation-artifacts/deferred-work.md b/_bmad-output/implementation-artifacts/deferred-work.md
+index 05924be..8a3a7dd 100644
+--- a/_bmad-output/implementation-artifacts/deferred-work.md
++++ b/_bmad-output/implementation-artifacts/deferred-work.md
+@@ -45,6 +45,10 @@
+ - **`apps/admin/src/lib/api.ts`'s `ApiError` never surfaces a `string[]` validation message.** NestJS's default `ValidationPipe` returns `message` as an array for validation failures; `api.ts`'s error parsing (`errorBody?.message`) only handles the `string` case, so every 400 across the whole app falls back to the generic `response.statusText` ("Bad Request") instead of the real per-field detail. First noticed by Story 1.2's Care Homes screen (its timezone/name validation errors), but it's a shared client bug, not specific to that screen. Revisit by handling `Array.isArray(errorBody.message)` (e.g. join with `, `) in `api.ts`'s shared error parsing — fix it there once, not per-screen.
+ - **No optimistic-concurrency guard on `CareHomeForm`'s edit path (`apps/admin/src/routes/care-homes.tsx`).** If two super admins edit the same home concurrently, the second PATCH silently overwrites the first's change (lost update) — no `updatedAt`/version check exists anywhere in the app yet to build this against. Low real-world likelihood (few super admins, infrequent home edits). Revisit if concurrent-edit conflicts are ever actually observed, or when a second screen needs the same guard and justifies building shared optimistic-concurrency plumbing once.
+ 
++## Deferred from: Story 1.15 — admin portal Users screen (2026-09-01)
++
++- **`staff` has no portal route to invite staff/family, even though the backend already allows it.** `POST /users/invites` is `@Roles('admin', 'staff')` (Story 1.5 AC #1's "home admin, or staff, where permitted"), but `sidebar-nav.tsx`'s `"Users"` `NavItem` is scoped to `["super_admin", "admin"]` only, and Story 1.15's screen only renders a `PermissionDenied` panel for any other role — `staff` included. This isn't a bug introduced by this story; it's a pre-existing frontend gap this story chose not to expand into, since broadening a role's portal access is a product decision, not a bug fix. Revisit by giving `sidebar-nav.tsx`'s `"Users"` entry a `staff`-visible variant (and `apps/admin/src/routes/users.tsx`'s `UsersPage` a `staff` branch — likely just `HomeAdminUsersPanel`'s invite dialog, without the list/role-change/revoke parts, which stay `admin`-only per Story 1.12) once product wants `staff` to actually use this.
++
+ ## Deferred from: architecture discussion (2026-08-05)
+ 
+ - **No job queue (Redis/BullMQ) for background work — deliberately not adopted yet.** The only current background-shaped operation is the password-reset email retry (see the Story 1.7 entry above), which doesn't justify the operational cost of standing up Redis/a worker process on its own. Revisit at Phase 7 (push notifications, per `backend-plan.md`), which needs its own dispatch-with-retry and dead-token handling — at that point there are two real background use cases (email + push), which is enough to justify introducing the queue once and migrating both onto it, rather than accumulating more one-off in-process `setTimeout` retry logic per feature.
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index b33a983..125a0d7 100644
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -41,14 +41,14 @@
+ # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
+ 
+ generated: 2026-08-06
+-last_updated: 2026-08-31 # 1-2 frontend + code review patches complete, status: done
++last_updated: 2026-09-01 # 1-15 implemented, status: review
+ project: evergreen
+ project_key: NOKEY
+ tracking_system: file-system
+ story_location: _bmad-output/implementation-artifacts
+ 
+ development_status:
+-  epic-1: done # re-closed 2026-08-31 — 1-2's frontend gap is now filled
++  epic-1: in-progress # reopened 2026-09-01 — same class of gap as 1.2: "Users" nav entry has never had a route; consolidates the missing frontend for 1.3/1.4/1.5/1.12 into 1-15
+   1-1-scaffold-del-proyecto-y-fundacion-multi-tenant: done
+   1-2-super-admin-crea-y-gestiona-care-homes: done # reopened+implemented 2026-08-31 — backend was already done, apps/admin frontend never existed for it (apps/admin didn't exist until Story 1.13); see 1-2-super-admin-crea-y-gestiona-care-homes.md
+   1-3-super-admin-asigna-home-admins-a-un-care-home: done
+@@ -63,6 +63,7 @@ development_status:
+   1-12-home-admins-gestionan-usuarios-y-roles-de-su-home: done # issue #26 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/20 (merged)
+   1-13-scaffold-real-de-apps-admin-portal-web: done # issue #27 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/19 (merged)
+   1-14-login-del-portal-web: done # issue #28 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/22 (merged)
++  1-15-portal-admin-gestiona-usuarios: review # issue #34 — fix: Users screen frontend for 1.3/1.4/1.5/1.12 (backend already done) — see 1-15-portal-admin-gestiona-usuarios.md
+   epic-1-retrospective: done # 2026-08-26 — see epic-1-retro-2026-08-26.md
+ 
+   epic-2: in-progress
+diff --git a/apps/admin/src/components/layout/sidebar-nav.tsx b/apps/admin/src/components/layout/sidebar-nav.tsx
+index 6369e56..d1b78d0 100644
+--- a/apps/admin/src/components/layout/sidebar-nav.tsx
++++ b/apps/admin/src/components/layout/sidebar-nav.tsx
+@@ -31,13 +31,13 @@ interface NavItem {
+ // super_admin manages homes + platform users + metrics (FR47/48/49/54); home
+ // admin manages their own home's users/residents/content/events/menu + home
+ // metrics (FR12/50/51/22/34/53/55); staff uploads/manages content for their
+-// home but never user/role management (AD-12). None of the target sections
+-// have real screens yet — the epics ship them — so every entry is currently
+-// disabled; this story only scopes the nav by role.
++// home but never user/role management (AD-12). Sections without a real
++// screen yet stay disabled (no `to`) until their epic ships one — "Care
++// homes"/"Residents"/"Users" are wired (Stories 1.2, 2.1, 1.15).
+ const NAV_SECTIONS: NavItem[] = [
+   { label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "super_admin", "staff"] },
+   { label: "Care homes", icon: Building2, roles: ["super_admin"], to: "/care-homes" },
+-  { label: "Users", icon: Users, roles: ["super_admin", "admin"] },
++  { label: "Users", icon: Users, roles: ["super_admin", "admin"], to: "/users" },
+   // admin-only (AC #5) — the backend's ResidentsController is @Roles('admin')
+   // only; showing this to staff (Story 1.10's original list) sent them to a
+   // screen that only ever 403s (Review Finding, patch).
+diff --git a/apps/admin/src/router.ts b/apps/admin/src/router.ts
+index 65bc62a..d58e0bf 100644
+--- a/apps/admin/src/router.ts
++++ b/apps/admin/src/router.ts
+@@ -6,9 +6,10 @@ import { loginRoute } from "@/routes/login";
+ import { protectedLayoutRoute } from "@/routes/protected-layout";
+ import { residentsRoute } from "@/routes/residents";
+ import { rootRoute } from "@/routes/root";
++import { usersRoute } from "@/routes/users";
+ 
+ const routeTree = rootRoute.addChildren([
+-  protectedLayoutRoute.addChildren([indexRoute, residentsRoute, careHomesRoute]),
++  protectedLayoutRoute.addChildren([indexRoute, residentsRoute, careHomesRoute, usersRoute]),
+   loginRoute,
+ ]);
+ 
+diff --git a/apps/admin/src/routes/care-homes.tsx b/apps/admin/src/routes/care-homes.tsx
+index 5a8f30d..da7ffe6 100644
+--- a/apps/admin/src/routes/care-homes.tsx
++++ b/apps/admin/src/routes/care-homes.tsx
+@@ -32,9 +32,13 @@ export const careHomesRoute = createRoute({
+   component: CareHomesPage,
+ });
+ 
+-const CARE_HOMES_QUERY_KEY = ["care-homes"] as const;
++// Exported for Story 1.15's users.tsx: the super_admin home-admin-invite
++// form needs the same home list. Reusing this query key (not a duplicate
++// one) lets React Query dedupe the fetch when both screens are visited in
++// the same session, instead of issuing a second GET /homes.
++export const CARE_HOMES_QUERY_KEY = ["care-homes"] as const;
+ 
+-function listHomes(): Promise<Home[]> {
++export function listHomes(): Promise<Home[]> {
+   return authedRequest<Home[]>("/homes");
+ }
+ 
+diff --git a/apps/admin/src/routes/users.tsx b/apps/admin/src/routes/users.tsx
+new file mode 100644
+index 0000000..53bfb3e
+--- /dev/null
++++ b/apps/admin/src/routes/users.tsx
+@@ -0,0 +1,549 @@
++import * as React from "react";
++import { createRoute } from "@tanstack/react-router";
++import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
++import type {
++  CreateSuperAdminRequest,
++  HomeUserSummary,
++  InviteHomeAdminRequest,
++  InviteUserRequest,
++  PendingUserResponse,
++  UpdateUserRoleRequest,
++} from "@evergreen/shared-types";
++
++import {
++  AlertDialog,
++  AlertDialogAction,
++  AlertDialogCancel,
++  AlertDialogContent,
++  AlertDialogDescription,
++  AlertDialogFooter,
++  AlertDialogHeader,
++  AlertDialogTitle,
++  AlertDialogTrigger,
++} from "@/components/ui/alert-dialog";
++import { Button } from "@/components/ui/button";
++import {
++  Dialog,
++  DialogContent,
++  DialogFooter,
++  DialogHeader,
++  DialogTitle,
++} from "@/components/ui/dialog";
++import { Input } from "@/components/ui/input";
++import { Label } from "@/components/ui/label";
++import { PermissionDenied } from "@/components/permission-denied";
++import { authedRequest, ApiError, NetworkError } from "@/lib/api";
++import { useAuth } from "@/lib/auth";
++import { CARE_HOMES_QUERY_KEY, listHomes } from "@/routes/care-homes";
++import { protectedLayoutRoute } from "@/routes/protected-layout";
++
++// Story 1.15: consolidates the never-built apps/admin frontend for Stories
++// 1.3 (super_admin invites a home admin), 1.4 (super_admin creates another
++// super_admin), 1.5 (admin/staff invites staff/family into their home), and
++// 1.12 (admin lists/re-roles/revokes their home's staff/family users). All
++// four backends are done and untouched by this story — see
++// apps/api/src/users/{users.controller,users.service}.ts and
++// apps/api/src/homes/homes.controller.ts's POST /:id/admins.
++export const usersRoute = createRoute({
++  getParentRoute: () => protectedLayoutRoute,
++  path: "/users",
++  component: UsersPage,
++});
++
++const SELECT_CLASSNAME =
++  "flex h-11 w-full rounded-sm border border-input bg-background px-3 py-2 text-[15px] text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
++
++function formatError(err: unknown): string {
++  if (err instanceof ApiError) {
++    return err.message || "Something went wrong. Please try again.";
++  }
++  if (err instanceof NetworkError) {
++    return "No network connection. Check your connection and try again.";
++  }
++  return "Something went wrong. Please try again.";
++}
++
++function UsersPage() {
++  const { user } = useAuth();
++
++  // Same distinction care-homes.tsx makes (Review Finding on that story): a
++  // null user here means the post-login /auth/me fetch hasn't resolved yet,
++  // not a permission denial.
++  if (!user) {
++    return <p className="p-6 text-muted-foreground">Loading your account…</p>;
++  }
++
++  if (user.role === "super_admin") return <SuperAdminUsersPanel />;
++  if (user.role === "admin") return <HomeAdminUsersPanel />;
++  // Client-side UX only — sidebar-nav.tsx already hides this route from
++  // staff/family, but a stale link should still land on a real message, not
++  // a blank/broken screen (UX-DR25). The API's own @Roles guards are what
++  // actually enforce this either way.
++  return <PermissionDenied />;
++}
++
++// ---------------------------------------------------------------------------
++// Super admin panel — two independent create actions, not a list. There is
++// no "list all platform users" endpoint (FR48/FR49 are create-only) — don't
++// invent one.
++// ---------------------------------------------------------------------------
++
++function inviteHomeAdmin(
++  homeId: string,
++  body: InviteHomeAdminRequest,
++): Promise<PendingUserResponse> {
++  return authedRequest<PendingUserResponse>(`/homes/${homeId}/admins`, {
++    method: "POST",
++    body,
++  });
++}
++
++function createSuperAdmin(
++  body: CreateSuperAdminRequest,
++): Promise<PendingUserResponse> {
++  return authedRequest<PendingUserResponse>("/users/super-admins", {
++    method: "POST",
++    body,
++  });
++}
++
++function SuperAdminUsersPanel() {
++  return (
++    <div className="flex flex-col gap-6">
++      <h1 className="font-heading text-2xl font-bold text-foreground">Users</h1>
++      <InviteHomeAdminCard />
++      <CreateSuperAdminCard />
++    </div>
++  );
++}
++
++function InviteHomeAdminCard() {
++  const homesQuery = useQuery({ queryKey: CARE_HOMES_QUERY_KEY, queryFn: listHomes });
++  const [homeId, setHomeId] = React.useState("");
++  const [email, setEmail] = React.useState("");
++  const [error, setError] = React.useState<string | null>(null);
++  const [success, setSuccess] = React.useState<string | null>(null);
++
++  const mutation = useMutation({
++    mutationFn: () => inviteHomeAdmin(homeId, { email: email.trim() }),
++    onSuccess: (result) => {
++      setSuccess(`Invite sent to ${result.email}.`);
++      setEmail("");
++    },
++    onError: (err: unknown) => setError(formatError(err)),
++  });
++
++  const handleSubmit = (e: React.FormEvent) => {
++    e.preventDefault();
++    // Same synchronous re-entrancy guard as residents.tsx/care-homes.tsx —
++    // a fast double-click can fire a second submit before `disabled` re-renders.
++    if (mutation.isPending) return;
++    setError(null);
++    setSuccess(null);
++    if (!homeId || email.trim().length === 0) return;
++    mutation.mutate();
++  };
++
++  return (
++    <form
++      onSubmit={handleSubmit}
++      noValidate
++      className="rounded-md border border-border bg-card p-6"
++    >
++      <h2 className="font-heading text-lg font-semibold text-foreground">
++        Invite a home admin
++      </h2>
++      <p className="mt-1 text-sm text-muted-foreground">
++        Sends a one-time activation link to manage the selected care home.
++      </p>
++
++      <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end">
++        <div className="flex-1">
++          <Label htmlFor="home-admin-home">Care home</Label>
++          <select
++            id="home-admin-home"
++            className={`mt-1 ${SELECT_CLASSNAME}`}
++            value={homeId}
++            onChange={(e) => setHomeId(e.target.value)}
++            disabled={mutation.isPending || homesQuery.isLoading}
++          >
++            <option value="" disabled>
++              {homesQuery.isLoading ? "Loading homes…" : "Select a home"}
++            </option>
++            {homesQuery.data?.map((home) => (
++              <option key={home.id} value={home.id}>
++                {home.name}
++              </option>
++            ))}
++          </select>
++        </div>
++
++        <div className="flex-1">
++          <Label htmlFor="home-admin-email">Email</Label>
++          <Input
++            id="home-admin-email"
++            className="mt-1"
++            type="email"
++            value={email}
++            onChange={(e) => setEmail(e.target.value)}
++            disabled={mutation.isPending}
++          />
++        </div>
++
++        <Button type="submit" disabled={mutation.isPending || !homeId}>
++          {mutation.isPending ? "Sending…" : "Send invite"}
++        </Button>
++      </div>
++
++      {homesQuery.isError ? (
++        <p className="mt-3 text-sm text-destructive">
++          Couldn't load care homes. Please try again.
++        </p>
++      ) : null}
++      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
++      {success ? <p className="mt-3 text-sm text-foreground">{success}</p> : null}
++    </form>
++  );
++}
++
++function CreateSuperAdminCard() {
++  const [email, setEmail] = React.useState("");
++  const [error, setError] = React.useState<string | null>(null);
++  const [success, setSuccess] = React.useState<string | null>(null);
++
++  const mutation = useMutation({
++    mutationFn: () => createSuperAdmin({ email: email.trim() }),
++    onSuccess: (result) => {
++      setSuccess(`Invite sent to ${result.email}.`);
++      setEmail("");
++    },
++    onError: (err: unknown) => setError(formatError(err)),
++  });
++
++  const handleSubmit = (e: React.FormEvent) => {
++    e.preventDefault();
++    if (mutation.isPending) return;
++    setError(null);
++    setSuccess(null);
++    if (email.trim().length === 0) return;
++    mutation.mutate();
++  };
++
++  return (
++    <form
++      onSubmit={handleSubmit}
++      noValidate
++      className="rounded-md border border-border bg-card p-6"
++    >
++      <h2 className="font-heading text-lg font-semibold text-foreground">
++        Create a super admin
++      </h2>
++      <p className="mt-1 text-sm text-muted-foreground">
++        Platform-level access, not scoped to any single care home.
++      </p>
++
++      <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end">
++        <div className="flex-1">
++          <Label htmlFor="super-admin-email">Email</Label>
++          <Input
++            id="super-admin-email"
++            className="mt-1"
++            type="email"
++            value={email}
++            onChange={(e) => setEmail(e.target.value)}
++            disabled={mutation.isPending}
++          />
++        </div>
++        <Button type="submit" disabled={mutation.isPending}>
++          {mutation.isPending ? "Sending…" : "Send invite"}
++        </Button>
++      </div>
++
++      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
++      {success ? <p className="mt-3 text-sm text-foreground">{success}</p> : null}
++    </form>
++  );
++}
++
++// ---------------------------------------------------------------------------
++// Home admin panel — list + invite + role change + revoke, all scoped
++// server-side to the caller's own home (Story 1.12). No home selector
++// anywhere here: there is nothing for this client to scope, the API
++// resolves it from the caller's own JWT regardless of what's sent.
++// ---------------------------------------------------------------------------
++
++const HOME_USERS_QUERY_KEY = ["users"] as const;
++
++function listHomeUsers(): Promise<HomeUserSummary[]> {
++  return authedRequest<HomeUserSummary[]>("/users");
++}
++
++function inviteUser(body: InviteUserRequest): Promise<PendingUserResponse> {
++  return authedRequest<PendingUserResponse>("/users/invites", {
++    method: "POST",
++    body,
++  });
++}
++
++function updateUserRole(
++  id: string,
++  body: UpdateUserRoleRequest,
++): Promise<HomeUserSummary> {
++  return authedRequest<HomeUserSummary>(`/users/${id}/role`, {
++    method: "PATCH",
++    body,
++  });
++}
++
++function revokeUserAccess(id: string): Promise<void> {
++  return authedRequest<void>(`/users/${id}`, { method: "DELETE" });
++}
++
++function HomeAdminUsersPanel() {
++  const queryClient = useQueryClient();
++  const [inviteOpen, setInviteOpen] = React.useState(false);
++
++  const usersQuery = useQuery({
++    queryKey: HOME_USERS_QUERY_KEY,
++    queryFn: listHomeUsers,
++  });
++
++  const invalidateUsers = () =>
++    queryClient.invalidateQueries({ queryKey: HOME_USERS_QUERY_KEY });
++
++  return (
++    <div className="rounded-md border border-border bg-card p-6">
++      <div className="flex items-center justify-between">
++        <h1 className="font-heading text-2xl font-bold text-foreground">Users</h1>
++        {/* Stays visible on a transient list error too, same reasoning as
++            residents.tsx's "Add a resident" button. */}
++        {!usersQuery.isLoading &&
++        (usersQuery.isError ||
++          (usersQuery.data && usersQuery.data.length > 0)) ? (
++          <Button onClick={() => setInviteOpen(true)}>Invite a user</Button>
++        ) : null}
++      </div>
++
++      <div className="mt-6">
++        {usersQuery.isLoading ? (
++          <p className="text-muted-foreground">Loading users…</p>
++        ) : usersQuery.isError ? (
++          <p className="text-destructive">Couldn't load users. Please try again.</p>
++        ) : usersQuery.data && usersQuery.data.length === 0 ? (
++          <div className="flex flex-col items-center gap-4 rounded-md border border-dashed border-border py-16 text-center">
++            <p className="text-muted-foreground">No users yet</p>
++            <Button onClick={() => setInviteOpen(true)}>Invite a user</Button>
++          </div>
++        ) : (
++          <ul className="divide-y divide-border">
++            {usersQuery.data?.map((homeUser) => (
++              <HomeUserRow key={homeUser.id} homeUser={homeUser} onChanged={invalidateUsers} />
++            ))}
++          </ul>
++        )}
++      </div>
++
++      <Dialog
++        open={inviteOpen}
++        onOpenChange={(open) => {
++          if (!open) setInviteOpen(false);
++        }}
++      >
++        <DialogContent>
++          <InviteUserForm
++            onInvited={() => {
++              invalidateUsers();
++              setInviteOpen(false);
++            }}
++            onCancel={() => setInviteOpen(false)}
++          />
++        </DialogContent>
++      </Dialog>
++    </div>
++  );
++}
++
++interface HomeUserRowProps {
++  homeUser: HomeUserSummary;
++  onChanged: () => void;
++}
++
++function HomeUserRow({ homeUser, onChanged }: HomeUserRowProps) {
++  // Local, optimistic copy of the select's value — a plain
++  // value={homeUser.role} controlled select would snap back to the old role
++  // the instant onChange fires (the prop hasn't changed yet, only local
++  // state would have), making every selection look like it silently
++  // reverted until the invalidated query refetches. Synced from the prop on
++  // every server-confirmed change, reverted on error.
++  const [prevServerRole, setPrevServerRole] = React.useState(homeUser.role);
++  const [role, setRole] = React.useState(homeUser.role);
++  const [roleError, setRoleError] = React.useState<string | null>(null);
++  const [revokeError, setRevokeError] = React.useState<string | null>(null);
++
++  // Adjust state during render when the confirmed prop changes, rather than
++  // in an effect (react-hooks/set-state-in-effect) — React's documented
++  // pattern for this ("Adjusting state when a prop changes"). Calling
++  // setState here is safe: it only fires when prevServerRole is stale, so it
++  // settles within the same render pass instead of cascading.
++  if (homeUser.role !== prevServerRole) {
++    setPrevServerRole(homeUser.role);
++    setRole(homeUser.role);
++  }
++
++  const roleMutation = useMutation({
++    mutationFn: (nextRole: "staff" | "family") =>
++      updateUserRole(homeUser.id, { role: nextRole }),
++    onSuccess: onChanged,
++    onError: (err: unknown) => {
++      setRole(homeUser.role);
++      setRoleError(formatError(err));
++    },
++  });
++
++  const revokeMutation = useMutation({
++    mutationFn: () => revokeUserAccess(homeUser.id),
++    onSuccess: onChanged,
++    onError: (err: unknown) => setRevokeError(formatError(err)),
++  });
++
++  return (
++    <li className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
++      <div>
++        <p className="text-[15px] font-medium text-foreground">
++          {homeUser.name ?? homeUser.email}
++        </p>
++        <p className="text-sm text-muted-foreground">
++          {homeUser.email} · {homeUser.isActive ? "Active" : "Pending"}
++        </p>
++        {roleError ? <p className="mt-1 text-sm text-destructive">{roleError}</p> : null}
++        {revokeError ? <p className="mt-1 text-sm text-destructive">{revokeError}</p> : null}
++      </div>
++
++      <div className="flex items-center gap-2">
++        <select
++          className="h-9 rounded-sm border border-input bg-background px-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
++          value={role}
++          disabled={roleMutation.isPending || revokeMutation.isPending}
++          onChange={(e) => {
++            const nextRole = e.target.value as "staff" | "family";
++            setRoleError(null);
++            setRole(nextRole);
++            roleMutation.mutate(nextRole);
++          }}
++          aria-label={`Role for ${homeUser.email}`}
++        >
++          <option value="staff">Staff</option>
++          <option value="family">Family</option>
++        </select>
++
++        {/* Immediate, session-invalidating action — confirm first, same
++            AlertDialog pattern top-nav.tsx uses for "Log out?". */}
++        <AlertDialog>
++          <AlertDialogTrigger asChild>
++            <Button
++              variant="outline"
++              size="sm"
++              disabled={roleMutation.isPending || revokeMutation.isPending}
++            >
++              Revoke access
++            </Button>
++          </AlertDialogTrigger>
++          <AlertDialogContent>
++            <AlertDialogHeader>
++              <AlertDialogTitle>Revoke access?</AlertDialogTitle>
++              <AlertDialogDescription>
++                {homeUser.email} will lose access to this home immediately.
++              </AlertDialogDescription>
++            </AlertDialogHeader>
++            <AlertDialogFooter>
++              <AlertDialogCancel>Cancel</AlertDialogCancel>
++              <AlertDialogAction onClick={() => revokeMutation.mutate()}>
++                Revoke access
++              </AlertDialogAction>
++            </AlertDialogFooter>
++          </AlertDialogContent>
++        </AlertDialog>
++      </div>
++    </li>
++  );
++}
++
++interface InviteUserFormProps {
++  onInvited: () => void;
++  onCancel: () => void;
++}
++
++function InviteUserForm({ onInvited, onCancel }: InviteUserFormProps) {
++  const [email, setEmail] = React.useState("");
++  const [role, setRole] = React.useState<"staff" | "family">("staff");
++  const [emailTouched, setEmailTouched] = React.useState(false);
++  const [error, setError] = React.useState<string | null>(null);
++
++  const mutation = useMutation({
++    mutationFn: () => inviteUser({ email: email.trim(), role }),
++    onSuccess: onInvited,
++    onError: (err: unknown) => setError(formatError(err)),
++  });
++
++  const emailError =
++    emailTouched && email.trim().length === 0 ? "Email is required" : null;
++
++  const handleSubmit = (e: React.FormEvent) => {
++    e.preventDefault();
++    if (mutation.isPending) return;
++    setEmailTouched(true);
++    if (email.trim().length === 0) return;
++    setError(null);
++    mutation.mutate();
++  };
++
++  return (
++    <form onSubmit={handleSubmit} noValidate>
++      <DialogHeader>
++        <DialogTitle>Invite a user</DialogTitle>
++      </DialogHeader>
++
++      <div className="mt-4 flex flex-col gap-4">
++        <div>
++          <Label htmlFor="invite-email">Email</Label>
++          <Input
++            id="invite-email"
++            className="mt-1"
++            type="email"
++            value={email}
++            onChange={(e) => setEmail(e.target.value)}
++            onBlur={() => setEmailTouched(true)}
++            autoFocus
++            disabled={mutation.isPending}
++          />
++          {emailError ? <p className="mt-1 text-sm text-destructive">{emailError}</p> : null}
++        </div>
++
++        <div>
++          <Label htmlFor="invite-role">Role</Label>
++          <select
++            id="invite-role"
++            className={`mt-1 ${SELECT_CLASSNAME}`}
++            value={role}
++            onChange={(e) => setRole(e.target.value as "staff" | "family")}
++            disabled={mutation.isPending}
++          >
++            <option value="staff">Staff</option>
++            <option value="family">Family</option>
++          </select>
++        </div>
++      </div>
++
++      {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
++
++      <DialogFooter className="mt-6">
++        <Button type="button" variant="outline" onClick={onCancel} disabled={mutation.isPending}>
++          Cancel
++        </Button>
++        <Button type="submit" disabled={mutation.isPending}>
++          {mutation.isPending ? "Sending…" : "Send invite"}
++        </Button>
++      </DialogFooter>
++    </form>
++  );
++}
+diff --git a/packages/shared-types/src/homes.ts b/packages/shared-types/src/homes.ts
+index fac143c..c75e8db 100644
+--- a/packages/shared-types/src/homes.ts
++++ b/packages/shared-types/src/homes.ts
+@@ -24,3 +24,9 @@ export interface UpdateHomeRequest {
+   address?: string | null;
+   timezone?: string;
+ }
++
++// Story 1.3: POST /homes/:id/admins — super_admin invites a home admin to
++// this specific home. Response is PendingUserResponse (users.ts).
++export interface InviteHomeAdminRequest {
++  email: string;
++}
+diff --git a/packages/shared-types/src/users.ts b/packages/shared-types/src/users.ts
+index 77ce70b..6ac8a10 100644
+--- a/packages/shared-types/src/users.ts
++++ b/packages/shared-types/src/users.ts
+@@ -15,3 +15,28 @@ export interface HomeUserSummary {
+ export interface UpdateUserRoleRequest {
+   role: Extract<Role, "staff" | "family">;
+ }
++
++// Stories 1.3/1.4/1.5: shared response shape for every pending-account
++// creation endpoint (POST /homes/:id/admins, /users/super-admins,
++// /users/invites). homeId is null only for Story 1.4's super_admin role,
++// which has no home scope at all.
++export interface PendingUserResponse {
++  id: string;
++  email: string;
++  role: Role;
++  isActive: boolean;
++  homeId: string | null;
++}
++
++// Story 1.4: POST /users/super-admins.
++export interface CreateSuperAdminRequest {
++  email: string;
++}
++
++// Story 1.5: POST /users/invites. `admin`/`super_admin` are never invitable
++// through this endpoint (InviteUserDto's INVITABLE_ROLES) — the acting
++// user's own home comes from their JWT server-side, never from this body.
++export interface InviteUserRequest {
++  email: string;
++  role: Extract<Role, "staff" | "family">;
++}

@@ -165,10 +165,14 @@ function InviteHomeAdminCard() {
             className={`mt-1 ${SELECT_CLASSNAME}`}
             value={homeId}
             onChange={(e) => setHomeId(e.target.value)}
-            disabled={mutation.isPending || homesQuery.isLoading}
+            disabled={mutation.isPending || homesQuery.isLoading || homesQuery.isError}
           >
             <option value="" disabled>
-              {homesQuery.isLoading ? "Loading homes…" : "Select a home"}
+              {homesQuery.isLoading
+                ? "Loading homes…"
+                : homesQuery.isError
+                  ? "Couldn't load homes"
+                  : "Select a home"}
             </option>
             {homesQuery.data?.map((home) => (
               <option key={home.id} value={home.id}>
@@ -185,7 +189,10 @@ function InviteHomeAdminCard() {
             className="mt-1"
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setSuccess(null);
+            }}
             disabled={mutation.isPending}
           />
         </div>
@@ -208,6 +215,7 @@ function InviteHomeAdminCard() {
 
 function CreateSuperAdminCard() {
   const [email, setEmail] = React.useState("");
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
 
@@ -220,13 +228,20 @@ function CreateSuperAdminCard() {
     onError: (err: unknown) => setError(formatError(err)),
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Highest-privilege action on this screen (platform-wide access, no home
+  // scope) — gets the same confirm-before-acting step "Revoke access"
+  // already requires, instead of firing on a single click (Review Finding).
+  const openConfirm = () => {
     if (mutation.isPending) return;
     setError(null);
     setSuccess(null);
     if (email.trim().length === 0) return;
-    mutation.mutate();
+    setConfirmOpen(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    openConfirm();
   };
 
   return (
@@ -250,17 +265,38 @@ function CreateSuperAdminCard() {
             className="mt-1"
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setSuccess(null);
+            }}
             disabled={mutation.isPending}
           />
         </div>
-        <Button type="submit" disabled={mutation.isPending}>
+        <Button type="button" onClick={openConfirm} disabled={mutation.isPending}>
           {mutation.isPending ? "Sending…" : "Send invite"}
         </Button>
       </div>
 
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
       {success ? <p className="mt-3 text-sm text-foreground">{success}</p> : null}
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Create a super admin?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {email.trim()} will get full platform-wide access, not scoped to
+              any single care home.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => mutation.mutate()}>
+              Create super admin
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </form>
   );
 }
