@@ -1,14 +1,12 @@
-import { Transform } from 'class-transformer';
 import { IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { Trim } from '../../common/decorators/trim.decorator';
 
 export class ConfirmOnboardingDto {
   // The invite code the invitee types into the app (FR5) — trimmed first so
   // a pasted code with surrounding whitespace still matches; opaque to the
   // API boundary. InviteCodeService does the actual hash-and-match lookup.
   // Codes are 10 unambiguous chars; 64 is generous headroom.
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Trim()
   @IsString()
   @MinLength(1)
   @MaxLength(64)

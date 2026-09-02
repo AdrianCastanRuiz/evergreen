@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-08-06
-last_updated: 2026-09-01 # 1-15 code review complete, status: done; epic-1 re-closed
+last_updated: 2026-09-02 # epic-1 retro action item done: shared Trim/TrimEmail decorator
 project: evergreen
 project_key: NOKEY
 tracking_system: file-system
@@ -126,4 +126,4 @@ action_items:
   - epic: 1
     action: "Add a shared trim-email validator/decorator instead of per-DTO fixes (fixed 3x separately: CreateSuperAdminDto, InviteHomeAdminDto, InviteUserDto)"
     owner: "Amelia (Dev)"
-    status: open
+    status: done # 2026-09-02 — Trim()/TrimEmail() decorators in apps/api/src/common/decorators/trim.decorator.ts; also deduped UpdateMeDto and ConfirmOnboardingDto's non-email trim
