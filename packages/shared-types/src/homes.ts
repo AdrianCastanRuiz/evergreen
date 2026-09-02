@@ -29,4 +29,5 @@ export interface UpdateHomeRequest {
 // this specific home. Response is PendingUserResponse (users.ts).
 export interface InviteHomeAdminRequest {
   email: string;
+  name?: string;
 }

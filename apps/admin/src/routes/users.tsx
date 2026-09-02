@@ -120,14 +120,20 @@ function SuperAdminUsersPanel() {
 function InviteHomeAdminCard() {
   const homesQuery = useQuery({ queryKey: CARE_HOMES_QUERY_KEY, queryFn: listHomes });
   const [homeId, setHomeId] = React.useState("");
+  const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => inviteHomeAdmin(homeId, { email: email.trim() }),
+    mutationFn: () =>
+      inviteHomeAdmin(homeId, {
+        email: email.trim(),
+        name: name.trim() || undefined,
+      }),
     onSuccess: (result) => {
       setSuccess(`Invite sent to ${result.email}.`);
+      setName("");
       setEmail("");
     },
     onError: (err: unknown) => setError(formatError(err)),
@@ -183,6 +189,22 @@ function InviteHomeAdminCard() {
         </div>
 
         <div className="flex-1">
+          <Label htmlFor="home-admin-name">Name</Label>
+          <Input
+            id="home-admin-name"
+            className="mt-1"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              setSuccess(null);
+            }}
+            placeholder="Optional"
+            disabled={mutation.isPending}
+            maxLength={255}
+          />
+        </div>
+
+        <div className="flex-1">
           <Label htmlFor="home-admin-email">Email</Label>
           <Input
             id="home-admin-email"
@@ -214,15 +236,18 @@ function InviteHomeAdminCard() {
 }
 
 function CreateSuperAdminCard() {
+  const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => createSuperAdmin({ email: email.trim() }),
+    mutationFn: () =>
+      createSuperAdmin({ email: email.trim(), name: name.trim() || undefined }),
     onSuccess: (result) => {
       setSuccess(`Invite sent to ${result.email}.`);
+      setName("");
       setEmail("");
     },
     onError: (err: unknown) => setError(formatError(err)),
@@ -258,6 +283,21 @@ function CreateSuperAdminCard() {
       </p>
 
       <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end">
+        <div className="flex-1">
+          <Label htmlFor="super-admin-name">Name</Label>
+          <Input
+            id="super-admin-name"
+            className="mt-1"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              setSuccess(null);
+            }}
+            placeholder="Optional"
+            disabled={mutation.isPending}
+            maxLength={255}
+          />
+        </div>
         <div className="flex-1">
           <Label htmlFor="super-admin-email">Email</Label>
           <Input
@@ -510,13 +550,15 @@ interface InviteUserFormProps {
 }
 
 function InviteUserForm({ onInvited, onCancel }: InviteUserFormProps) {
+  const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [role, setRole] = React.useState<"staff" | "family">("staff");
   const [emailTouched, setEmailTouched] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => inviteUser({ email: email.trim(), role }),
+    mutationFn: () =>
+      inviteUser({ email: email.trim(), role, name: name.trim() || undefined }),
     onSuccess: onInvited,
     onError: (err: unknown) => setError(formatError(err)),
   });
@@ -541,6 +583,20 @@ function InviteUserForm({ onInvited, onCancel }: InviteUserFormProps) {
 
       <div className="mt-4 flex flex-col gap-4">
         <div>
+          <Label htmlFor="invite-name">Name</Label>
+          <Input
+            id="invite-name"
+            className="mt-1"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Optional"
+            autoFocus
+            disabled={mutation.isPending}
+            maxLength={255}
+          />
+        </div>
+
+        <div>
           <Label htmlFor="invite-email">Email</Label>
           <Input
             id="invite-email"
@@ -549,7 +605,6 @@ function InviteUserForm({ onInvited, onCancel }: InviteUserFormProps) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             onBlur={() => setEmailTouched(true)}
-            autoFocus
             disabled={mutation.isPending}
           />
           {emailError ? <p className="mt-1 text-sm text-destructive">{emailError}</p> : null}

@@ -131,8 +131,13 @@ describe('UsersService', () => {
       );
 
       expect(prisma.client.user.create).toHaveBeenCalledWith({
-        data: { email: 'admin@evergreen.test', role: 'admin', isActive: false },
-        select: { id: true, email: true, role: true, isActive: true },
+        data: {
+          email: 'admin@evergreen.test',
+          role: 'admin',
+          isActive: false,
+          name: null,
+        },
+        select: { id: true, email: true, name: true, role: true, isActive: true },
       });
       expect(prisma.client.homeMembership.create).toHaveBeenCalledWith({
         data: { userId: 'user-1', homeId: 'home-1', role: 'admin' },
@@ -251,8 +256,9 @@ describe('UsersService', () => {
           email: 'super@evergreen.test',
           role: 'super_admin',
           isActive: false,
+          name: null,
         },
-        select: { id: true, email: true, role: true, isActive: true },
+        select: { id: true, email: true, name: true, role: true, isActive: true },
       });
       expect(prisma.client.homeMembership.create).not.toHaveBeenCalled();
       expect(passwordResetService.issueActivationToken).toHaveBeenCalledWith(
@@ -353,11 +359,16 @@ describe('UsersService', () => {
 
       expect(prisma.client.user.findUnique).toHaveBeenCalledWith({
         where: { email: 'staff@evergreen.test' },
-        select: { id: true, email: true, role: true, isActive: true },
+        select: { id: true, email: true, name: true, role: true, isActive: true },
       });
       expect(prisma.client.user.create).toHaveBeenCalledWith({
-        data: { email: 'staff@evergreen.test', role: 'staff', isActive: false },
-        select: { id: true, email: true, role: true, isActive: true },
+        data: {
+          email: 'staff@evergreen.test',
+          role: 'staff',
+          isActive: false,
+          name: null,
+        },
+        select: { id: true, email: true, name: true, role: true, isActive: true },
       });
       expect(prisma.client.homeMembership.create).toHaveBeenCalledWith({
         data: { userId: 'user-3', homeId: 'home-1', role: 'staff' },
@@ -396,8 +407,9 @@ describe('UsersService', () => {
           email: 'family@evergreen.test',
           role: 'family',
           isActive: false,
+          name: null,
         },
-        select: { id: true, email: true, role: true, isActive: true },
+        select: { id: true, email: true, name: true, role: true, isActive: true },
       });
       expect(prisma.client.homeMembership.create).toHaveBeenCalledWith({
         data: { userId: 'user-4', homeId: 'home-1', role: 'family' },
@@ -564,7 +576,7 @@ describe('UsersService', () => {
 
       expect(prisma.client.user.findUnique).toHaveBeenCalledWith({
         where: { email: existingActiveFamily.email },
-        select: { id: true, email: true, role: true, isActive: true },
+        select: { id: true, email: true, name: true, role: true, isActive: true },
       });
       expect(result).not.toHaveProperty('passwordHash');
     });

@@ -38,7 +38,7 @@ export class UsersController {
   createSuperAdmin(
     @Body() dto: CreateSuperAdminDto,
   ): Promise<PendingUserResponse> {
-    return this.usersService.createSuperAdmin(dto.email);
+    return this.usersService.createSuperAdmin(dto.email, dto.name);
   }
 
   // Story 1.5 (FR11): a home admin/staff invites a staff or family member
@@ -72,6 +72,7 @@ export class UsersController {
       home.name,
       dto.email,
       dto.role,
+      dto.name,
     );
   }
 

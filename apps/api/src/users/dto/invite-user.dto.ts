@@ -1,6 +1,6 @@
-import { IsIn } from 'class-validator';
+import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import type { Role } from '../../../generated/prisma';
-import { TrimEmail } from '../../common/decorators/trim.decorator';
+import { Trim, TrimEmail } from '../../common/decorators/trim.decorator';
 
 // `admin`/`super_admin` are never invitable through this endpoint regardless
 // of caller — rejected here at validation time, before the service layer's
@@ -13,4 +13,11 @@ export class InviteUserDto {
 
   @IsIn(INVITABLE_ROLES)
   role!: 'staff' | 'family';
+
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(255)
+  name?: string;
 }

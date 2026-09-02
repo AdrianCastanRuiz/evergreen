@@ -37,6 +37,7 @@ const MANAGEABLE_ROLES: Role[] = ['staff', 'family'];
 export interface PendingUserResponse {
   id: string;
   email: string;
+  name: string | null;
   role: Role;
   isActive: boolean;
   // null for super_admin (Story 1.4) — the role has no home scope at all,
@@ -80,11 +81,12 @@ export class UsersService {
     homeId: string,
     email: string,
     homeName: string,
+    name?: string,
   ): Promise<PendingUserResponse> {
     const normalizedEmail = email.trim().toLowerCase();
     const role: Role = 'admin';
 
-    const user = await this.createUser(normalizedEmail, role);
+    const user = await this.createUser(normalizedEmail, role, name);
 
     // Everything from here on rolls back to a clean state on any failure —
     // not just the HomeMembership write (code-review finding: the original
@@ -117,11 +119,14 @@ export class UsersService {
   // on `User`; home scoping only exists via HomeMembership, which this role
   // never gets a row in). That also means no @BypassTenantScope() is needed
   // on the controller route: nothing here touches a tenant-scoped model.
-  async createSuperAdmin(email: string): Promise<PendingUserResponse> {
+  async createSuperAdmin(
+    email: string,
+    name?: string,
+  ): Promise<PendingUserResponse> {
     const normalizedEmail = email.trim().toLowerCase();
     const role: Role = 'super_admin';
 
-    const user = await this.createUser(normalizedEmail, role);
+    const user = await this.createUser(normalizedEmail, role, name);
 
     let rawToken: string;
     try {
@@ -150,6 +155,7 @@ export class UsersService {
     homeName: string,
     email: string,
     targetRole: Role,
+    name?: string,
   ): Promise<PendingUserResponse> {
     // AC #5: strictly downward invitation. Checked before any read/write —
     // a same-or-higher-rank invite never even looks up the target email.
@@ -165,7 +171,7 @@ export class UsersService {
     // target user's bcrypt hash.
     const existing = await this.prisma.client.user.findUnique({
       where: { email: normalizedEmail },
-      select: { id: true, email: true, role: true, isActive: true },
+      select: { id: true, email: true, name: true, role: true, isActive: true },
     });
 
     if (existing) {
@@ -184,7 +190,7 @@ export class UsersService {
       );
     }
 
-    const user = await this.createUser(normalizedEmail, targetRole);
+    const user = await this.createUser(normalizedEmail, targetRole, name);
 
     // Story 1.8: a NEW family member (FR5) resolves their pending account by
     // typing an invite code into the app and setting a password there —
@@ -337,14 +343,15 @@ export class UsersService {
   private async createUser(
     email: string,
     role: Role,
+    name?: string,
   ): Promise<Omit<PendingUserResponse, 'homeId'>> {
     try {
       // Explicit `select` — never return the raw Prisma User (passwordHash
       // and any future sensitive field must never leak into an API
       // response), mirroring AuthController.me().
       return await this.prisma.client.user.create({
-        data: { email, role, isActive: false },
-        select: { id: true, email: true, role: true, isActive: true },
+        data: { email, role, isActive: false, name: name ?? null },
+        select: { id: true, email: true, name: true, role: true, isActive: true },
       });
     } catch (error) {
       throw this.mapUniqueEmailViolation(error);

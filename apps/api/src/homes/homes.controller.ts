@@ -67,6 +67,11 @@ export class HomesController {
     @Body() dto: InviteHomeAdminDto,
   ): Promise<PendingUserResponse> {
     const home = await this.homesService.findOne(id);
-    return this.usersService.createPendingHomeAdmin(id, dto.email, home.name);
+    return this.usersService.createPendingHomeAdmin(
+      id,
+      dto.email,
+      home.name,
+      dto.name,
+    );
   }
 }

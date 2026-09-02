@@ -23,6 +23,7 @@ export interface UpdateUserRoleRequest {
 export interface PendingUserResponse {
   id: string;
   email: string;
+  name: string | null;
   role: Role;
   isActive: boolean;
   homeId: string | null;
@@ -31,6 +32,7 @@ export interface PendingUserResponse {
 // Story 1.4: POST /users/super-admins.
 export interface CreateSuperAdminRequest {
   email: string;
+  name?: string;
 }
 
 // Story 1.5: POST /users/invites. `admin`/`super_admin` are never invitable
@@ -39,4 +41,5 @@ export interface CreateSuperAdminRequest {
 export interface InviteUserRequest {
   email: string;
   role: Extract<Role, "staff" | "family">;
+  name?: string;
 }
