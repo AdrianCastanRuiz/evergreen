@@ -12,6 +12,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/lib/auth";
 
 interface TopNavProps {
@@ -19,7 +20,7 @@ interface TopNavProps {
 }
 
 export function TopNav({ onOpenMobileNav }: TopNavProps) {
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-background px-4">
@@ -35,6 +36,16 @@ export function TopNav({ onOpenMobileNav }: TopNavProps) {
       <span className="font-heading text-lg font-bold tracking-wide text-primary">
         Evergreen
       </span>
+      {/* super_admin has no single homeId (manages every home), so
+          homeName is null for them — nothing renders here in that case. */}
+      {user?.homeName ? (
+        <>
+          <Separator orientation="vertical" className="h-5" />
+          <span className="truncate text-sm font-medium text-muted-foreground">
+            {user.homeName}
+          </span>
+        </>
+      ) : null}
       <span className="flex-1" />
       {/* Deliberate logout, distinct from a forced session-expiry redirect
           (Story 1.14 AC #8) — signOut clears the expiry reason too. A

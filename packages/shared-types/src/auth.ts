@@ -25,6 +25,9 @@ export interface MeResponse {
   role: Role;
   isActive: boolean;
   homeId: string | null;
+  // null for super_admin (not scoped to a single home) or if homeId is set
+  // but the home lookup somehow misses.
+  homeName: string | null;
 }
 
 // PATCH /auth/me — either field may be omitted; the endpoint updates only

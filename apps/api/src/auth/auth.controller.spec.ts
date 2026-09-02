@@ -14,7 +14,9 @@ describe('AuthController', () => {
   let authService: { login: jest.Mock; refresh: jest.Mock };
   let res: { cookie: jest.Mock; clearCookie: jest.Mock };
   let tenantContext: { getUserId: jest.Mock; getHomeId: jest.Mock };
-  let prisma: { client: { user: { update: jest.Mock } } };
+  let prisma: {
+    client: { user: { update: jest.Mock }; home: { findUnique: jest.Mock } };
+  };
 
   const tokens = { accessToken: 'access-1', refreshToken: 'refresh-1' };
   const rotatedTokens = { accessToken: 'access-2', refreshToken: 'refresh-2' };
@@ -23,7 +25,9 @@ describe('AuthController', () => {
     authService = { login: jest.fn(), refresh: jest.fn() };
     res = { cookie: jest.fn(), clearCookie: jest.fn() };
     tenantContext = { getUserId: jest.fn(), getHomeId: jest.fn() };
-    prisma = { client: { user: { update: jest.fn() } } };
+    prisma = {
+      client: { user: { update: jest.fn() }, home: { findUnique: jest.fn() } },
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
@@ -139,6 +143,7 @@ describe('AuthController', () => {
       tenantContext.getUserId.mockReturnValue('user-1');
       tenantContext.getHomeId.mockReturnValue('home-1');
       prisma.client.user.update.mockResolvedValue(updatedUser);
+      prisma.client.home.findUnique.mockResolvedValue({ name: 'Sunny Acres' });
 
       const result = await controller.updateMe({ name: 'New Name' });
 
@@ -153,7 +158,15 @@ describe('AuthController', () => {
           isActive: true,
         },
       });
-      expect(result).toEqual({ ...updatedUser, homeId: 'home-1' });
+      expect(prisma.client.home.findUnique).toHaveBeenCalledWith({
+        where: { id: 'home-1' },
+        select: { name: true },
+      });
+      expect(result).toEqual({
+        ...updatedUser,
+        homeId: 'home-1',
+        homeName: 'Sunny Acres',
+      });
     });
 
     it('trims and lowercases the email before persisting', async () => {

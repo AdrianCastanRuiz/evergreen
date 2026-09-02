@@ -38,6 +38,7 @@ export interface MeResponse {
   role: Role;
   isActive: boolean;
   homeId: string | null;
+  homeName: string | null;
 }
 
 const REFRESH_COOKIE_NAME = 'refresh_token';
@@ -215,7 +216,8 @@ export class AuthController {
     // shouldn't report a deactivated account as a live session.
     if (!user || !user.isActive) throw new UnauthorizedException();
 
-    return { ...user, homeId: this.tenantContext.getHomeId() };
+    const homeId = this.tenantContext.getHomeId();
+    return { ...user, homeId, homeName: await this.getHomeName(homeId) };
   }
 
   // Story 1.9 (FR4): any logged-in user edits their own name/email. Lives
@@ -257,7 +259,21 @@ export class AuthController {
       throw this.mapUniqueEmailViolation(error);
     }
 
-    return { ...user, homeId: this.tenantContext.getHomeId() };
+    const homeId = this.tenantContext.getHomeId();
+    return { ...user, homeId, homeName: await this.getHomeName(homeId) };
+  }
+
+  // Home is the tenant root, not a tenant-scoped table (AD-1) — a plain
+  // findUnique needs no @BypassTenantScope() here, same reasoning as
+  // HomesController's own routes. Shared by me()/updateMe(), both of which
+  // return a MeResponse.
+  private async getHomeName(homeId: string | null): Promise<string | null> {
+    if (!homeId) return null;
+    const home = await this.prisma.client.home.findUnique({
+      where: { id: homeId },
+      select: { name: true },
+    });
+    return home?.name ?? null;
   }
 
   // Same P2002 -> 409 mapping UsersService/HomesService already apply for
