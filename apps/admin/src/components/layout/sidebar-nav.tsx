@@ -2,9 +2,11 @@ import {
   BarChart3,
   Building2,
   CalendarDays,
+  Heart,
   Image,
   LayoutDashboard,
   Newspaper,
+  UserCog,
   UtensilsCrossed,
   Users,
   type LucideIcon,
@@ -37,7 +39,13 @@ interface NavItem {
 const NAV_SECTIONS: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "super_admin", "staff"] },
   { label: "Care homes", icon: Building2, roles: ["super_admin"], to: "/care-homes" },
-  { label: "Users", icon: Users, roles: ["super_admin", "admin"], to: "/users" },
+  // super_admin-only now — invite-home-admin/create-super-admin (Stories
+  // 1.3/1.4). A home admin's own staff/family management moved to the
+  // dedicated Staff/Family tabs below (both still GET /users under the
+  // hood, filtered client-side per role).
+  { label: "Users", icon: Users, roles: ["super_admin"], to: "/users" },
+  { label: "Staff", icon: UserCog, roles: ["admin"], to: "/staff" },
+  { label: "Family", icon: Heart, roles: ["admin"], to: "/family" },
   // admin-only (AC #5) — the backend's ResidentsController is @Roles('admin')
   // only; showing this to staff (Story 1.10's original list) sent them to a
   // screen that only ever 403s (Review Finding, patch).
