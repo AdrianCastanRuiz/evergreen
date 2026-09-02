@@ -1,4 +1,5 @@
 import { Menu } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 
 import {
   AlertDialog,
@@ -47,6 +48,9 @@ export function TopNav({ onOpenMobileNav }: TopNavProps) {
         </>
       ) : null}
       <span className="flex-1" />
+      <Button variant="ghost" size="sm" asChild>
+        <Link to="/profile">Profile</Link>
+      </Button>
       {/* Deliberate logout, distinct from a forced session-expiry redirect
           (Story 1.14 AC #8) — signOut clears the expiry reason too. A
           confirmation step guards against an accidental click. */}
