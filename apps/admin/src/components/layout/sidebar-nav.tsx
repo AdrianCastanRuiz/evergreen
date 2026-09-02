@@ -91,7 +91,13 @@ export function SidebarNav({ collapsed = false, className }: SidebarNavProps) {
                 to={to}
                 title={label}
                 className={itemClassName}
-                activeProps={{ className: "bg-muted text-foreground" }}
+                // `!` forces this over the base className's hover:bg-muted —
+                // without it, hovering the already-active tab would flip it
+                // back to the lighter hover shade instead of staying on the
+                // darker active one (both are plain background-color
+                // utilities at the same CSS specificity, so source order
+                // alone doesn't reliably decide the winner).
+                activeProps={{ className: "!bg-foreground/10 !text-foreground" }}
               >
                 <Icon className="h-5 w-5 shrink-0" aria-hidden />
                 {!collapsed && <span className="text-[15px]">{label}</span>}
