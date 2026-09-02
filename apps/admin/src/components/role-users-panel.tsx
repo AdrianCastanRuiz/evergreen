@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Search } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   HomeUserSummary,
@@ -71,6 +72,7 @@ interface RoleUsersPanelProps {
 export function RoleUsersPanel({ role, title }: RoleUsersPanelProps) {
   const queryClient = useQueryClient();
   const [inviteOpen, setInviteOpen] = React.useState(false);
+  const [search, setSearch] = React.useState("");
 
   const usersQuery = useQuery({
     queryKey: HOME_USERS_QUERY_KEY,
@@ -78,6 +80,18 @@ export function RoleUsersPanel({ role, title }: RoleUsersPanelProps) {
   });
 
   const roleUsers = usersQuery.data?.filter((u) => u.role === role);
+
+  // Client-side only — the list is already fully fetched (GET /users has no
+  // search param), and per-home staff/family counts are small enough that a
+  // server round-trip per keystroke would be overkill.
+  const normalizedSearch = search.trim().toLowerCase();
+  const visibleUsers = normalizedSearch
+    ? roleUsers?.filter(
+        (u) =>
+          u.email.toLowerCase().includes(normalizedSearch) ||
+          (u.name ?? "").toLowerCase().includes(normalizedSearch),
+      )
+    : roleUsers;
 
   const invalidateUsers = () =>
     queryClient.invalidateQueries({ queryKey: HOME_USERS_QUERY_KEY });
@@ -94,6 +108,22 @@ export function RoleUsersPanel({ role, title }: RoleUsersPanelProps) {
         ) : null}
       </div>
 
+      {roleUsers && roleUsers.length > 0 ? (
+        <div className="relative mt-4">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            className="pl-9 pr-3"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name or email"
+            aria-label={`Search ${title.toLowerCase()} by name or email`}
+          />
+        </div>
+      ) : null}
+
       <div className="mt-6">
         {usersQuery.isLoading ? (
           <p className="text-muted-foreground">Loading {title.toLowerCase()}…</p>
@@ -104,9 +134,11 @@ export function RoleUsersPanel({ role, title }: RoleUsersPanelProps) {
             <p className="text-muted-foreground">No {title.toLowerCase()} yet</p>
             <Button onClick={() => setInviteOpen(true)}>Invite {role}</Button>
           </div>
+        ) : visibleUsers && visibleUsers.length === 0 ? (
+          <p className="text-muted-foreground">No matches for &quot;{search.trim()}&quot;.</p>
         ) : (
           <ul className="divide-y divide-border">
-            {roleUsers?.map((homeUser) => (
+            {visibleUsers?.map((homeUser) => (
               <HomeUserRow key={homeUser.id} homeUser={homeUser} onChanged={invalidateUsers} />
             ))}
           </ul>
