@@ -198,7 +198,6 @@ function InviteHomeAdminCard() {
               setName(e.target.value);
               setSuccess(null);
             }}
-            placeholder="Optional"
             disabled={mutation.isPending}
             maxLength={255}
           />
@@ -293,7 +292,6 @@ function CreateSuperAdminCard() {
               setName(e.target.value);
               setSuccess(null);
             }}
-            placeholder="Optional"
             disabled={mutation.isPending}
             maxLength={255}
           />
@@ -589,7 +587,6 @@ function InviteUserForm({ onInvited, onCancel }: InviteUserFormProps) {
             className="mt-1"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Optional"
             autoFocus
             disabled={mutation.isPending}
             maxLength={255}
