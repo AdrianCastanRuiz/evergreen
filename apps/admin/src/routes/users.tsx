@@ -517,6 +517,7 @@ function HomeUserRow({ homeUser, onChanged }: HomeUserRowProps) {
             <Button
               variant="outline"
               size="sm"
+              className="border-destructive text-destructive hover:bg-destructive/10"
               disabled={roleMutation.isPending || revokeMutation.isPending}
             >
               Revoke access
