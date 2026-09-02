@@ -1,5 +1,5 @@
 import * as React from "react";
-import { createRoute, Navigate } from "@tanstack/react-router";
+import { createRoute, Link, Navigate } from "@tanstack/react-router";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,12 @@ function LoginScreen() {
   const [passwordTouched, setPasswordTouched] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // Read directly off the URL, same as reset-password.tsx's token — a
+  // one-shot flag from reset-password.tsx's post-confirm redirect, not
+  // worth a typed route search schema.
+  const [resetSuccess] = React.useState(
+    () => new URLSearchParams(window.location.search).get("reset") === "success",
+  );
 
   // A session-expiry landing must be heard once, not on every later visit
   // to /login — clear it when this screen unmounts (mirrors mobile).
@@ -120,6 +126,12 @@ function LoginScreen() {
         />
         {passwordError ? <p className="mt-1 text-sm text-destructive">{passwordError}</p> : null}
 
+        {resetSuccess ? (
+          <p className="mt-4 text-sm text-foreground">
+            Your password has been updated. Sign in with your new password.
+          </p>
+        ) : null}
+
         {sessionEndReason === "expired" ? (
           <p className="mt-4 text-sm text-foreground">
             Your session ended. Please log in again.
@@ -130,6 +142,9 @@ function LoginScreen() {
 
         <Button type="submit" className="mt-6 w-full" disabled={submitting}>
           {submitting ? "Signing in…" : "Sign in"}
+        </Button>
+        <Button type="button" variant="outline" className="mt-3 w-full" asChild>
+          <Link to="/request-password-reset">Forgot your password?</Link>
         </Button>
       </form>
     </div>
