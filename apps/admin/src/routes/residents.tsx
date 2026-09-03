@@ -3,10 +3,24 @@ import { createRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CreateResidentRequest,
+  FamilyLinkedMember,
+  HomeUserSummary,
+  LinkFamilyMemberRequest,
   Resident,
   UpdateResidentRequest,
 } from "@evergreen/shared-types";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,6 +32,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authedRequest, ApiError, NetworkError } from "@/lib/api";
+import { formatError } from "@/lib/format-error";
 import { protectedLayoutRoute } from "@/routes/protected-layout";
 
 // Story 2.1: home admin creates/lists/edits resident profiles for their own
@@ -50,6 +65,37 @@ function updateResident(
   });
 }
 
+// Story 2.2 (Task 5): link-management surface only — the invite-a-family
+// screen (with its own resident picker) is tracked separately, per the
+// Epic 1 retro decision that this story's frontend scope stays narrowed to
+// managing links for already-active family members.
+function listFamilyLinks(residentId: string): Promise<FamilyLinkedMember[]> {
+  return authedRequest<FamilyLinkedMember[]>(
+    `/residents/${residentId}/family-links`,
+  );
+}
+
+function linkFamilyMember(residentId: string, userId: string): Promise<void> {
+  const body: LinkFamilyMemberRequest = { userId };
+  return authedRequest<void>(`/residents/${residentId}/family-links`, {
+    method: "POST",
+    body,
+  });
+}
+
+function unlinkFamilyMember(residentId: string, userId: string): Promise<void> {
+  return authedRequest<void>(`/residents/${residentId}/family-links/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+// Reused as-is from role-users-panel.tsx's pattern: GET /users already
+// returns every staff+family user in the caller's home in one call, so this
+// filters client-side rather than adding a second, parallel endpoint.
+function listHomeUsers(): Promise<HomeUserSummary[]> {
+  return authedRequest<HomeUserSummary[]>("/users");
+}
+
 function formatDob(dob: string | null): string | null {
   if (!dob) return null;
   // dob travels as an ISO-8601 date string (YYYY-MM-DD) — display only the
@@ -62,6 +108,8 @@ function ResidentsPage() {
   const [dialogResident, setDialogResident] = React.useState<
     Resident | "new" | null
   >(null);
+  const [familyLinksResident, setFamilyLinksResident] =
+    React.useState<Resident | null>(null);
 
   const residentsQuery = useQuery({
     queryKey: RESIDENTS_QUERY_KEY,
@@ -118,13 +166,22 @@ function ResidentsPage() {
                       .join(" · ") || "No details yet"}
                   </p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setDialogResident(resident)}
-                >
-                  Edit
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFamilyLinksResident(resident)}
+                  >
+                    Family links
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDialogResident(resident)}
+                  >
+                    Edit
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
@@ -150,7 +207,187 @@ function ResidentsPage() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={familyLinksResident !== null}
+        onOpenChange={(open) => {
+          if (!open) setFamilyLinksResident(null);
+        }}
+      >
+        <DialogContent>
+          {familyLinksResident ? (
+            <FamilyLinksPanel resident={familyLinksResident} />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+// Story 2.2 (AC #2, #5): link an already-active family member of this home
+// to `resident`, or remove one of their existing links — enforced
+// server-side by FamilyResidentGuard the moment a link is removed (AD-11).
+// Building the invite-a-family-member screen itself (with its own
+// resident-picker at invite time, AC #1) is separately tracked scope.
+interface FamilyLinksPanelProps {
+  resident: Resident;
+}
+
+function FamilyLinksPanel({ resident }: FamilyLinksPanelProps) {
+  const queryClient = useQueryClient();
+  const [selectedUserId, setSelectedUserId] = React.useState("");
+  const [linkError, setLinkError] = React.useState<string | null>(null);
+  const [removeError, setRemoveError] = React.useState<string | null>(null);
+
+  const linksQueryKey = ["residents", resident.id, "family-links"] as const;
+  const linksQuery = useQuery({
+    queryKey: linksQueryKey,
+    queryFn: () => listFamilyLinks(resident.id),
+  });
+  // GET /users already returns every staff+family user in this home — the
+  // same query key role-users-panel.tsx uses, so switching between the two
+  // screens doesn't trigger a redundant refetch.
+  const usersQuery = useQuery({
+    queryKey: ["users"] as const,
+    queryFn: listHomeUsers,
+  });
+
+  const invalidateLinks = () =>
+    queryClient.invalidateQueries({ queryKey: linksQueryKey });
+
+  const linkMutation = useMutation({
+    mutationFn: (userId: string) => linkFamilyMember(resident.id, userId),
+    onSuccess: () => {
+      setSelectedUserId("");
+      setLinkError(null);
+      invalidateLinks();
+    },
+    onError: (err: unknown) => setLinkError(formatError(err)),
+  });
+
+  const unlinkMutation = useMutation({
+    mutationFn: (userId: string) => unlinkFamilyMember(resident.id, userId),
+    onSuccess: () => {
+      setRemoveError(null);
+      invalidateLinks();
+    },
+    onError: (err: unknown) => setRemoveError(formatError(err)),
+  });
+
+  const linkedIds = new Set((linksQuery.data ?? []).map((l) => l.id));
+  const availableFamilyUsers = (usersQuery.data ?? []).filter(
+    (u) => u.role === "family" && u.isActive && !linkedIds.has(u.id),
+  );
+
+  const handleLink = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (linkMutation.isPending || !selectedUserId) return;
+    linkMutation.mutate(selectedUserId);
+  };
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Family links — {resident.name}</DialogTitle>
+      </DialogHeader>
+
+      <div className="mt-4">
+        {linksQuery.isLoading ? (
+          <p className="text-muted-foreground">Loading linked family…</p>
+        ) : linksQuery.isError ? (
+          <p className="text-destructive">
+            Couldn't load family links. Please try again.
+          </p>
+        ) : linksQuery.data && linksQuery.data.length === 0 ? (
+          <p className="text-muted-foreground">No family members linked yet.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {linksQuery.data?.map((member) => (
+              <li
+                key={member.id}
+                className="flex items-center justify-between py-2"
+              >
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    {member.name ?? member.email}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{member.email}</p>
+                </div>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-destructive text-destructive hover:bg-destructive/10"
+                      disabled={unlinkMutation.isPending}
+                    >
+                      Remove
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Remove this family link?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {member.name ?? member.email} will immediately lose
+                        access to {resident.name}&apos;s data.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => unlinkMutation.mutate(member.id)}
+                      >
+                        Remove
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </li>
+            ))}
+          </ul>
+        )}
+        {removeError ? (
+          <p className="mt-2 text-sm text-destructive">{removeError}</p>
+        ) : null}
+      </div>
+
+      <form onSubmit={handleLink} className="mt-6 border-t border-border pt-4">
+        <Label htmlFor="family-link-select">Link an existing family member</Label>
+        <div className="mt-1 flex items-center gap-2">
+          <select
+            id="family-link-select"
+            className="flex h-11 w-full rounded-sm border border-input bg-background px-3 py-2 text-[15px] text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            value={selectedUserId}
+            onChange={(e) => setSelectedUserId(e.target.value)}
+            disabled={usersQuery.isLoading || usersQuery.isError || linkMutation.isPending}
+          >
+            <option value="">
+              {availableFamilyUsers.length === 0
+                ? "No available family members"
+                : "Select a family member…"}
+            </option>
+            {availableFamilyUsers.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name ?? u.email}
+              </option>
+            ))}
+          </select>
+          <Button type="submit" disabled={linkMutation.isPending || !selectedUserId}>
+            {linkMutation.isPending ? "Linking…" : "Link"}
+          </Button>
+        </div>
+        {/* Review finding: without this branch, a failed GET /users looked
+            identical to "no family members available" — the select just
+            silently offered nothing, with no indication anything was wrong. */}
+        {usersQuery.isError ? (
+          <p className="mt-2 text-sm text-destructive">
+            Couldn't load family members. Please try again.
+          </p>
+        ) : linkError ? (
+          <p className="mt-2 text-sm text-destructive">{linkError}</p>
+        ) : null}
+      </form>
+    </>
   );
 }
 

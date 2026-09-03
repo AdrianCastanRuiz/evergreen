@@ -21,7 +21,16 @@ describe('Users — invite staff/family (e2e)', () => {
 
   const seededUserIds: string[] = [];
   const seededHomeIds: string[] = [];
+  const seededResidentIds: string[] = [];
   const PASSWORD = 'E2E-test-pass-123';
+
+  // Shared fixture for the tests below that just need "an admin of some
+  // home" — reused instead of a fresh seedHome+seedActiveUser+login each,
+  // to stay within this file's shared 5/min login-endpoint budget (AD-8;
+  // same rationale as residents-manage-home.e2e-spec.ts's shared fixtures).
+  let homeA: string;
+  let adminA: { id: string; email: string };
+  let adminAToken: string;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -37,6 +46,10 @@ describe('Users — invite staff/family (e2e)', () => {
     prisma = moduleFixture.get(PrismaService);
     tenantContext = moduleFixture.get(TenantContextService);
     passwordService = app.get(PasswordService);
+
+    homeA = await seedHome(`E2E Invite Home A ${Date.now()}`);
+    adminA = await seedActiveUser('admin', homeA);
+    adminAToken = await login(adminA.email);
   });
 
   afterAll(async () => {
@@ -45,6 +58,11 @@ describe('Users — invite staff/family (e2e)', () => {
       async () => {
         await prisma.client.passwordResetToken.deleteMany({
           where: { userId: { in: seededUserIds } },
+        });
+        // Cascades any FamilyLink created by this file's Story 2.2 tests
+        // before the User/Home rows they reference are deleted below.
+        await prisma.client.resident.deleteMany({
+          where: { id: { in: seededResidentIds } },
         });
         await prisma.client.homeMembership.deleteMany({
           where: { userId: { in: seededUserIds } },
@@ -100,6 +118,16 @@ describe('Users — invite staff/family (e2e)', () => {
     return { id: user.id, email };
   }
 
+  async function seedResident(homeId: string, name: string): Promise<string> {
+    const resident = await tenantContext.run(
+      { userId: null, role: 'super_admin', homeId: null, bypass: true },
+      async () =>
+        await prisma.client.resident.create({ data: { homeId, name } }),
+    );
+    seededResidentIds.push(resident.id);
+    return resident.id;
+  }
+
   async function login(email: string): Promise<string> {
     const res = await request(app.getHttpServer())
       .post('/auth/login')
@@ -109,14 +137,10 @@ describe('Users — invite staff/family (e2e)', () => {
   }
 
   it('lets an admin invite a new staff member, scoped to the admin own home (AC #1)', async () => {
-    const homeId = await seedHome(`E2E Invite Home ${Date.now()}`);
-    const admin = await seedActiveUser('admin', homeId);
-    const accessToken = await login(admin.email);
-
     const inviteEmail = `new-staff-${Date.now()}@e2e.evergreen.test`;
     const res = await request(app.getHttpServer())
       .post('/users/invites')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Authorization', `Bearer ${adminAToken}`)
       .send({ email: inviteEmail, role: 'staff' })
       .expect(201);
 
@@ -125,9 +149,13 @@ describe('Users — invite staff/family (e2e)', () => {
     expect(res.body).toEqual({
       id: invitedId,
       email: inviteEmail,
+      // Pre-existing gap, unrelated to Story 2.2: this assertion predates
+      // the invitee-name-capture feature (commit e1a75f9) and never picked
+      // up the response's `name` field.
+      name: null,
       role: 'staff',
       isActive: false,
-      homeId,
+      homeId: homeA,
     });
 
     const membership = await tenantContext.run(
@@ -137,7 +165,7 @@ describe('Users — invite staff/family (e2e)', () => {
           where: { userId: invitedId },
         }),
     );
-    expect(membership?.homeId).toBe(homeId);
+    expect(membership?.homeId).toBe(homeA);
     expect(membership?.role).toBe('staff');
   });
 
@@ -222,5 +250,97 @@ describe('Users — invite staff/family (e2e)', () => {
         await prisma.client.user.findMany({ where: { email: family.email } }),
     );
     expect(users).toHaveLength(1);
+  });
+
+  // Story 2.2 (AC #1, AC #4): a FamilyLink is written at invite time,
+  // alongside the HomeMembership — usable once the account activates
+  // (Story 1.7/1.8) — and a residentId that doesn't resolve in the caller's
+  // own home 404s cleanly, creating no user, never leaking cross-home
+  // resident existence. Combined into one test (rather than one login each)
+  // to stay within this file's shared 5/min login-endpoint budget (AD-8).
+  it('links a resident given at invite time, and rejects one from another home (Story 2.2 AC #1, #4)', async () => {
+    const homeB = await seedHome(`E2E Invite+Link Home B ${Date.now()}`);
+    const residentA = await seedResident(homeA, 'Linked at invite time');
+    const residentB = await seedResident(homeB, 'Home B Resident');
+
+    const linkedInviteEmail = `new-family-linked-${Date.now()}@e2e.evergreen.test`;
+    const linkedRes = await request(app.getHttpServer())
+      .post('/users/invites')
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .send({ email: linkedInviteEmail, role: 'family', residentId: residentA })
+      .expect(201);
+
+    const invitedId = (linkedRes.body as { id: string }).id;
+    seededUserIds.push(invitedId);
+
+    const familyLink = await tenantContext.run(
+      { userId: null, role: 'super_admin', homeId: null, bypass: true },
+      async () =>
+        await prisma.client.familyLink.findUnique({
+          where: {
+            userId_residentId: { userId: invitedId, residentId: residentA },
+          },
+        }),
+    );
+    expect(familyLink).not.toBeNull();
+    expect(familyLink?.homeId).toBe(homeA);
+
+    const blockedInviteEmail = `blocked-link-${Date.now()}@e2e.evergreen.test`;
+    await request(app.getHttpServer())
+      .post('/users/invites')
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .send({
+        email: blockedInviteEmail,
+        role: 'family',
+        residentId: residentB,
+      })
+      .expect(404);
+
+    const blockedUsers = await tenantContext.run(
+      { userId: null, role: 'super_admin', homeId: null, bypass: true },
+      async () =>
+        await prisma.client.user.findMany({
+          where: { email: blockedInviteEmail },
+        }),
+    );
+    expect(blockedUsers).toHaveLength(0);
+  });
+
+  // Review finding (Acceptance Auditor + Edge Case Hunter): the
+  // "already-active family user from another home" branch
+  // (grantExistingFamilyUserHomeAccess) used to silently drop residentId —
+  // reusing adminAToken/homeA here (no new login) to stay within this
+  // file's login budget.
+  it('creates a FamilyLink when granting an existing active family user access to a new home, given a residentId (Story 2.2 AC #1, #4)', async () => {
+    const homeB = await seedHome(`E2E Invite+Link Home C ${Date.now()}`);
+    const existingFamily = await seedActiveUser('family', homeB);
+    const residentA = await seedResident(homeA, 'For an existing family user');
+
+    const res = await request(app.getHttpServer())
+      .post('/users/invites')
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .send({
+        email: existingFamily.email,
+        role: 'family',
+        residentId: residentA,
+      })
+      .expect(201);
+
+    expect((res.body as { id: string }).id).toBe(existingFamily.id);
+
+    const familyLink = await tenantContext.run(
+      { userId: null, role: 'super_admin', homeId: null, bypass: true },
+      async () =>
+        await prisma.client.familyLink.findUnique({
+          where: {
+            userId_residentId: {
+              userId: existingFamily.id,
+              residentId: residentA,
+            },
+          },
+        }),
+    );
+    expect(familyLink).not.toBeNull();
+    expect(familyLink?.homeId).toBe(homeA);
   });
 });

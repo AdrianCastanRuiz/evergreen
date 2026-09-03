@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   HttpCode,
@@ -14,7 +15,9 @@ import type { Resident } from '../../generated/prisma';
 import { Roles } from '../common/auth/roles.decorator';
 import { TenantContextService } from '../common/tenant/tenant-context.service';
 import { CreateResidentDto } from './dto/create-resident.dto';
+import { LinkFamilyMemberDto } from './dto/link-family-member.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
+import type { LinkedFamilyMember } from './residents.service';
 import { ResidentsService } from './residents.service';
 
 // Story 2.1 (AC #1, #2, #4, #5): home admin manages resident profiles
@@ -57,6 +60,43 @@ export class ResidentsController {
   ): Promise<Resident> {
     this.assertHomeContext();
     return this.residentsService.update(id, dto);
+  }
+
+  // Story 2.2 (AC #2): link an already-active family member of this home to
+  // an additional resident. Follows HomesController's precedent for a
+  // resource owning a sub-action on another (POST /homes/:id/admins) rather
+  // than a top-level /family-links resource.
+  @Post(':residentId/family-links')
+  @HttpCode(HttpStatus.CREATED)
+  linkFamilyMember(
+    @Param('residentId', ParseUUIDPipe) residentId: string,
+    @Body() dto: LinkFamilyMemberDto,
+  ): Promise<void> {
+    this.assertHomeContext();
+    return this.residentsService.linkFamilyMember(residentId, dto.userId);
+  }
+
+  // Story 2.2 (Task 4): lists this resident's linked family members, for the
+  // admin UI's "remove a link" surface.
+  @Get(':residentId/family-links')
+  listFamilyLinks(
+    @Param('residentId', ParseUUIDPipe) residentId: string,
+  ): Promise<LinkedFamilyMember[]> {
+    this.assertHomeContext();
+    return this.residentsService.listFamilyLinks(residentId);
+  }
+
+  // Story 2.2 (AC #5): removes a FamilyLink — the linked family member loses
+  // access to this resident's data on their very next request, enforced by
+  // FamilyResidentGuard (AD-11), not just hidden in this UI.
+  @Delete(':residentId/family-links/:userId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  unlinkFamilyMember(
+    @Param('residentId', ParseUUIDPipe) residentId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
+  ): Promise<void> {
+    this.assertHomeContext();
+    return this.residentsService.unlinkFamilyMember(residentId, userId);
   }
 
   // this.tenantContext.getStore()?.homeId is guaranteed non-null past the

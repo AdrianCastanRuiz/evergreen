@@ -73,6 +73,7 @@ export class UsersController {
       dto.email,
       dto.role,
       dto.name,
+      dto.residentId,
     );
   }
 

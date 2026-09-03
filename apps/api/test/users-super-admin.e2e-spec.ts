@@ -92,6 +92,10 @@ describe('Users — create super admin (e2e)', () => {
     expect(createRes.body).toEqual({
       id: createdUserId,
       email: newSuperAdminEmail,
+      // Pre-existing gap, unrelated to Story 2.2: this assertion predates
+      // the invitee-name-capture feature (commit e1a75f9) and never picked
+      // up the response's `name` field.
+      name: null,
       role: 'super_admin',
       isActive: false,
       homeId: null,

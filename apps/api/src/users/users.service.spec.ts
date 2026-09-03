@@ -33,6 +33,12 @@ describe('UsersService', () => {
         delete: jest.Mock;
         count: jest.Mock;
       };
+      resident: {
+        findUnique: jest.Mock;
+      };
+      familyLink: {
+        create: jest.Mock;
+      };
     };
   };
   let passwordResetService: { issueActivationToken: jest.Mock };
@@ -87,6 +93,12 @@ describe('UsersService', () => {
           delete: jest.fn(),
           count: jest.fn(),
         },
+        resident: {
+          findUnique: jest.fn(),
+        },
+        familyLink: {
+          create: jest.fn(),
+        },
       },
     };
     passwordResetService = { issueActivationToken: jest.fn() };
@@ -137,7 +149,13 @@ describe('UsersService', () => {
           isActive: false,
           name: null,
         },
-        select: { id: true, email: true, name: true, role: true, isActive: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isActive: true,
+        },
       });
       expect(prisma.client.homeMembership.create).toHaveBeenCalledWith({
         data: { userId: 'user-1', homeId: 'home-1', role: 'admin' },
@@ -258,7 +276,13 @@ describe('UsersService', () => {
           isActive: false,
           name: null,
         },
-        select: { id: true, email: true, name: true, role: true, isActive: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isActive: true,
+        },
       });
       expect(prisma.client.homeMembership.create).not.toHaveBeenCalled();
       expect(passwordResetService.issueActivationToken).toHaveBeenCalledWith(
@@ -359,7 +383,13 @@ describe('UsersService', () => {
 
       expect(prisma.client.user.findUnique).toHaveBeenCalledWith({
         where: { email: 'staff@evergreen.test' },
-        select: { id: true, email: true, name: true, role: true, isActive: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isActive: true,
+        },
       });
       expect(prisma.client.user.create).toHaveBeenCalledWith({
         data: {
@@ -368,7 +398,13 @@ describe('UsersService', () => {
           isActive: false,
           name: null,
         },
-        select: { id: true, email: true, name: true, role: true, isActive: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isActive: true,
+        },
       });
       expect(prisma.client.homeMembership.create).toHaveBeenCalledWith({
         data: { userId: 'user-3', homeId: 'home-1', role: 'staff' },
@@ -409,7 +445,13 @@ describe('UsersService', () => {
           isActive: false,
           name: null,
         },
-        select: { id: true, email: true, name: true, role: true, isActive: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isActive: true,
+        },
       });
       expect(prisma.client.homeMembership.create).toHaveBeenCalledWith({
         data: { userId: 'user-4', homeId: 'home-1', role: 'family' },
@@ -428,6 +470,106 @@ describe('UsersService', () => {
       );
       expect(mailService.sendAccountInviteEmail).not.toHaveBeenCalled();
       expect(result).toEqual({ ...pendingFamily, homeId: 'home-1' });
+    });
+
+    it('creates a FamilyLink alongside the invite when residentId is given for a new family invite (Story 2.2 AC #1)', async () => {
+      prisma.client.user.findUnique.mockResolvedValue(null);
+      prisma.client.resident.findUnique.mockResolvedValue({
+        id: 'resident-1',
+        homeId: 'home-1',
+      });
+      prisma.client.user.create.mockResolvedValue(pendingFamily);
+      prisma.client.homeMembership.create.mockResolvedValue({
+        id: 'membership-family',
+      });
+      inviteCodeService.generateForMembership.mockResolvedValue('ABCDEFGHJK');
+      prisma.client.familyLink.create.mockResolvedValue({});
+
+      await usersService.inviteUser(
+        'staff',
+        'home-1',
+        'Evergreen Oaks',
+        'family@evergreen.test',
+        'family',
+        undefined,
+        'resident-1',
+      );
+
+      expect(prisma.client.resident.findUnique).toHaveBeenCalledWith({
+        where: { id: 'resident-1' },
+      });
+      expect(prisma.client.familyLink.create).toHaveBeenCalledWith({
+        data: { userId: 'user-4', residentId: 'resident-1', homeId: 'home-1' },
+      });
+    });
+
+    it('rejects a residentId that does not resolve in the caller home, before creating any user (Story 2.2 AC #4)', async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(null);
+
+      await expect(
+        usersService.inviteUser(
+          'staff',
+          'home-1',
+          'Evergreen Oaks',
+          'family@evergreen.test',
+          'family',
+          undefined,
+          'other-home-resident',
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.client.user.findUnique).not.toHaveBeenCalled();
+      expect(prisma.client.user.create).not.toHaveBeenCalled();
+    });
+
+    it('ignores residentId as a no-op when inviting staff (Story 2.2)', async () => {
+      prisma.client.user.findUnique.mockResolvedValue(null);
+      prisma.client.user.create.mockResolvedValue(pendingStaff);
+      passwordResetService.issueActivationToken.mockResolvedValue('raw-token');
+
+      await usersService.inviteUser(
+        'admin',
+        'home-1',
+        'Evergreen Oaks',
+        'staff@evergreen.test',
+        'staff',
+        undefined,
+        'resident-1',
+      );
+
+      expect(prisma.client.resident.findUnique).not.toHaveBeenCalled();
+      expect(prisma.client.familyLink.create).not.toHaveBeenCalled();
+    });
+
+    it('rolls back the orphaned pending User when the FamilyLink write fails', async () => {
+      prisma.client.user.findUnique.mockResolvedValue(null);
+      prisma.client.resident.findUnique.mockResolvedValue({
+        id: 'resident-1',
+        homeId: 'home-1',
+      });
+      prisma.client.user.create.mockResolvedValue(pendingFamily);
+      prisma.client.homeMembership.create.mockResolvedValue({
+        id: 'membership-family',
+      });
+      inviteCodeService.generateForMembership.mockResolvedValue('ABCDEFGHJK');
+      const familyLinkError = new Error('family link insert failed');
+      prisma.client.familyLink.create.mockRejectedValue(familyLinkError);
+
+      await expect(
+        usersService.inviteUser(
+          'staff',
+          'home-1',
+          'Evergreen Oaks',
+          pendingFamily.email,
+          'family',
+          undefined,
+          'resident-1',
+        ),
+      ).rejects.toBe(familyLinkError);
+
+      expect(prisma.client.user.delete).toHaveBeenCalledWith({
+        where: { id: 'user-4' },
+      });
+      expect(mailService.sendFamilyInviteEmail).not.toHaveBeenCalled();
     });
 
     it('rolls back the orphaned pending User when invite-code generation fails for a new family invite', async () => {
@@ -520,6 +662,65 @@ describe('UsersService', () => {
       expect(result).toEqual({ ...existingActiveFamily, homeId: 'home-2' });
     });
 
+    it('creates a FamilyLink when residentId is given for an existing active family user gaining a new home (review finding, Story 2.2 AC #1/#4)', async () => {
+      prisma.client.user.findUnique.mockResolvedValue(existingActiveFamily);
+      prisma.client.homeMembership.findUnique.mockResolvedValue(null);
+      prisma.client.resident.findUnique.mockResolvedValue({
+        id: 'resident-1',
+        homeId: 'home-2',
+      });
+      prisma.client.familyLink.create.mockResolvedValue({});
+
+      await usersService.inviteUser(
+        'admin',
+        'home-2',
+        'Sunny Meadows',
+        existingActiveFamily.email,
+        'family',
+        undefined,
+        'resident-1',
+      );
+
+      expect(prisma.client.familyLink.create).toHaveBeenCalledWith({
+        data: {
+          userId: existingActiveFamily.id,
+          residentId: 'resident-1',
+          homeId: 'home-2',
+        },
+      });
+      expect(mailService.sendHomeAccessAddedEmail).toHaveBeenCalled();
+    });
+
+    it('rolls back the HomeMembership when the FamilyLink write fails for an existing active family user (review finding)', async () => {
+      prisma.client.user.findUnique.mockResolvedValue(existingActiveFamily);
+      prisma.client.homeMembership.findUnique.mockResolvedValue(null);
+      prisma.client.resident.findUnique.mockResolvedValue({
+        id: 'resident-1',
+        homeId: 'home-2',
+      });
+      const familyLinkError = new Error('family link insert failed');
+      prisma.client.familyLink.create.mockRejectedValue(familyLinkError);
+
+      await expect(
+        usersService.inviteUser(
+          'admin',
+          'home-2',
+          'Sunny Meadows',
+          existingActiveFamily.email,
+          'family',
+          undefined,
+          'resident-1',
+        ),
+      ).rejects.toBe(familyLinkError);
+
+      expect(prisma.client.homeMembership.delete).toHaveBeenCalledWith({
+        where: {
+          userId_homeId: { userId: existingActiveFamily.id, homeId: 'home-2' },
+        },
+      });
+      expect(mailService.sendHomeAccessAddedEmail).not.toHaveBeenCalled();
+    });
+
     it('grants an existing PENDING family user a new home via the activation-email path, not the notification path (AC #4)', async () => {
       prisma.client.user.findUnique.mockResolvedValue(existingPendingFamily);
       prisma.client.homeMembership.findUnique.mockResolvedValue(null);
@@ -576,7 +777,13 @@ describe('UsersService', () => {
 
       expect(prisma.client.user.findUnique).toHaveBeenCalledWith({
         where: { email: existingActiveFamily.email },
-        select: { id: true, email: true, name: true, role: true, isActive: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isActive: true,
+        },
       });
       expect(result).not.toHaveProperty('passwordHash');
     });

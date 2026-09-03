@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-08-06
-last_updated: 2026-09-02 # epic-1 retro action item done: shared Trim/TrimEmail decorator
+last_updated: 2026-09-03 # story 2.2 done — code review complete, 7 patch findings applied
 project: evergreen
 project_key: NOKEY
 tracking_system: file-system
@@ -69,7 +69,7 @@ development_status:
   epic-2: in-progress
   2-0-fix-revoked-user-reactivation-via-password-reset: done # issue #29 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/26 (merged)
   2-1-admins-crean-y-gestionan-perfiles-de-residentes-por-care-home: done # issue #30
-  2-2-admins-vinculan-cuentas-familiares-a-residentes-especificos: ready-for-dev # issue #31
+  2-2-admins-vinculan-cuentas-familiares-a-residentes-especificos: done # issue #31
   2-3-familia-ve-la-lista-de-residentes-vinculados: ready-for-dev # issue #32
   2-4-familia-ve-el-perfil-de-un-residente: ready-for-dev # issue #33
   epic-2-retrospective: optional

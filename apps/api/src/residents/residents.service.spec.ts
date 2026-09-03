@@ -1,5 +1,6 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '../../generated/prisma';
 import { TenantContextService } from '../common/tenant/tenant-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ResidentsService } from './residents.service';
@@ -14,8 +15,25 @@ describe('ResidentsService', () => {
         findUnique: jest.Mock;
         update: jest.Mock;
       };
+      homeMembership: {
+        findFirst: jest.Mock;
+      };
+      familyLink: {
+        create: jest.Mock;
+        findMany: jest.Mock;
+        delete: jest.Mock;
+      };
     };
   };
+
+  const uniqueViolation = new Prisma.PrismaClientKnownRequestError('conflict', {
+    code: 'P2002',
+    clientVersion: 'test',
+  });
+  const recordNotFoundViolation = new Prisma.PrismaClientKnownRequestError(
+    'not found',
+    { code: 'P2025', clientVersion: 'test' },
+  );
 
   const resident = {
     id: 'resident-1',
@@ -34,6 +52,14 @@ describe('ResidentsService', () => {
           findMany: jest.fn(),
           findUnique: jest.fn(),
           update: jest.fn(),
+        },
+        homeMembership: {
+          findFirst: jest.fn(),
+        },
+        familyLink: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          delete: jest.fn(),
         },
       },
     };
@@ -179,6 +205,148 @@ describe('ResidentsService', () => {
         residentsService.update('missing', { name: 'New Name' }),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.client.resident.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('linkFamilyMember', () => {
+    it('creates a FamilyLink for an active family member of this home (AC #2)', async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(resident);
+      prisma.client.homeMembership.findFirst.mockResolvedValue({
+        userId: 'family-1',
+        role: 'family',
+        user: { isActive: true },
+      });
+      prisma.client.familyLink.create.mockResolvedValue({});
+
+      await residentsService.linkFamilyMember(resident.id, 'family-1');
+
+      expect(prisma.client.homeMembership.findFirst).toHaveBeenCalledWith({
+        where: { userId: 'family-1', role: 'family' },
+        include: { user: { select: { isActive: true } } },
+      });
+      expect(prisma.client.familyLink.create).toHaveBeenCalledWith({
+        data: {
+          userId: 'family-1',
+          residentId: resident.id,
+          homeId: resident.homeId,
+        },
+      });
+    });
+
+    it('throws NotFoundException for a resident outside the caller home (AC #4)', async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(null);
+
+      await expect(
+        residentsService.linkFamilyMember('other-home-resident', 'family-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.client.homeMembership.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when the target user is not a family member of this home at all', async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(resident);
+      prisma.client.homeMembership.findFirst.mockResolvedValue(null);
+
+      await expect(
+        residentsService.linkFamilyMember(resident.id, 'not-a-member'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.client.familyLink.create).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException for a pending (not-yet-activated) family invitee (review finding)', async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(resident);
+      prisma.client.homeMembership.findFirst.mockResolvedValue({
+        userId: 'pending-family',
+        role: 'family',
+        user: { isActive: false },
+      });
+
+      await expect(
+        residentsService.linkFamilyMember(resident.id, 'pending-family'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.client.familyLink.create).not.toHaveBeenCalled();
+    });
+
+    it('maps a duplicate link to ConflictException instead of a raw 500', async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(resident);
+      prisma.client.homeMembership.findFirst.mockResolvedValue({
+        userId: 'family-1',
+        role: 'family',
+        user: { isActive: true },
+      });
+      prisma.client.familyLink.create.mockRejectedValue(uniqueViolation);
+
+      await expect(
+        residentsService.linkFamilyMember(resident.id, 'family-1'),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('listFamilyLinks', () => {
+    it('lists linked family members, name/email only (no FamilyLink internals)', async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(resident);
+      prisma.client.familyLink.findMany.mockResolvedValue([
+        {
+          user: {
+            id: 'family-1',
+            email: 'family@evergreen.test',
+            name: 'Jo Doe',
+          },
+        },
+      ]);
+
+      await expect(
+        residentsService.listFamilyLinks(resident.id),
+      ).resolves.toEqual([
+        { id: 'family-1', email: 'family@evergreen.test', name: 'Jo Doe' },
+      ]);
+      expect(prisma.client.familyLink.findMany).toHaveBeenCalledWith({
+        where: { residentId: resident.id },
+        include: { user: { select: { id: true, email: true, name: true } } },
+        orderBy: { createdAt: 'asc' },
+      });
+    });
+
+    it('throws NotFoundException for a resident outside the caller home (AC #4)', async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(null);
+
+      await expect(
+        residentsService.listFamilyLinks('other-home-resident'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('unlinkFamilyMember', () => {
+    it('deletes the FamilyLink (AC #5)', async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(resident);
+      prisma.client.familyLink.delete.mockResolvedValue({});
+
+      await residentsService.unlinkFamilyMember(resident.id, 'family-1');
+
+      expect(prisma.client.familyLink.delete).toHaveBeenCalledWith({
+        where: {
+          userId_residentId: { userId: 'family-1', residentId: resident.id },
+        },
+      });
+    });
+
+    it('throws NotFoundException for a resident outside the caller home (AC #4)', async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(null);
+
+      await expect(
+        residentsService.unlinkFamilyMember('other-home-resident', 'family-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.client.familyLink.delete).not.toHaveBeenCalled();
+    });
+
+    it('maps a missing/already-removed link to NotFoundException instead of a raw 500', async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(resident);
+      prisma.client.familyLink.delete.mockRejectedValue(
+        recordNotFoundViolation,
+      );
+
+      await expect(
+        residentsService.unlinkFamilyMember(resident.id, 'family-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

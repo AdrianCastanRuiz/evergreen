@@ -104,6 +104,10 @@ describe('Homes — invite admin (e2e)', () => {
     expect(inviteRes.body).toEqual({
       id: invitedUserId,
       email: inviteEmail,
+      // Pre-existing gap, unrelated to Story 2.2: this assertion predates
+      // the invitee-name-capture feature (commit e1a75f9) and never picked
+      // up the response's `name` field.
+      name: null,
       role: 'admin',
       isActive: false,
       homeId,
