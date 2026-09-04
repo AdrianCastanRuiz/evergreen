@@ -156,11 +156,25 @@ export class UsersService {
     email: string,
     targetRole: Role,
     name?: string,
+    residentId?: string,
   ): Promise<PendingUserResponse> {
     // AC #5: strictly downward invitation. Checked before any read/write —
     // a same-or-higher-rank invite never even looks up the target email.
     if (ROLE_RANK[targetRole] >= ROLE_RANK[actorRole]) {
       throw new ForbiddenException();
+    }
+
+    // Story 2.2 (AC #1, #4): residentId only makes sense for a family invite
+    // — a no-op (not an error) for staff. Validated up front, before any
+    // write, so a bad resident id 404s cleanly with no pending user ever
+    // created. Auto-scoped by the tenant-scoping extension to actorHomeId —
+    // a resident id from another home resolves to null here, same as
+    // ResidentsService.findOne, never leaking cross-home existence.
+    if (targetRole === 'family' && residentId) {
+      const resident = await this.prisma.client.resident.findUnique({
+        where: { id: residentId },
+      });
+      if (!resident) throw new NotFoundException('Resident not found');
     }
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -187,6 +201,7 @@ export class UsersService {
         existing,
         actorHomeId,
         homeName,
+        residentId,
       );
     }
 
@@ -208,6 +223,16 @@ export class UsersService {
         rawInviteCode = await this.inviteCodeService.generateForMembership(
           membership.id,
         );
+        // Story 2.2 (AC #1): written at invite time, alongside the
+        // HomeMembership — becomes practically usable once the account
+        // activates (Story 1.7/1.8), same as the membership itself. Rolled
+        // back by the same catch block below if this (or anything after it
+        // in this try) fails.
+        if (residentId) {
+          await this.prisma.client.familyLink.create({
+            data: { userId: user.id, residentId, homeId: actorHomeId },
+          });
+        }
       } else {
         rawToken = await this.passwordResetService.issueActivationToken(
           user.id,
@@ -242,6 +267,7 @@ export class UsersService {
     existing: Omit<PendingUserResponse, 'homeId'>,
     actorHomeId: string,
     homeName: string,
+    residentId?: string,
   ): Promise<PendingUserResponse> {
     const alreadyMember = await this.prisma.client.homeMembership.findUnique({
       where: {
@@ -266,6 +292,37 @@ export class UsersService {
       throw this.mapUniqueMembershipViolation(error);
     }
 
+    try {
+      // Story 2.2 (AC #1, #4): the earlier "brand-new family user" path
+      // isn't the only way AC #1's residentId reaches this method — an
+      // already-active-elsewhere family user invited into a *new* home can
+      // be linked to a resident here too (review finding: this branch used
+      // to silently drop residentId). Rolled back together with the
+      // HomeMembership above via the same rollbackHomeMembership on any
+      // failure in this block, not just the token-issuance one.
+      if (residentId) {
+        await this.prisma.client.familyLink.create({
+          data: { userId: existing.id, residentId, homeId: actorHomeId },
+        });
+      }
+
+      if (!existing.isActive) {
+        const rawToken = await this.passwordResetService.issueActivationToken(
+          existing.id,
+        );
+        this.mailService
+          .sendAccountInviteEmail(existing.email, rawToken, homeName)
+          .catch(() => {});
+      }
+    } catch (error) {
+      // Code-review finding: without this, a failure here left the
+      // HomeMembership committed with no token/email/link ever sent — the
+      // same partial-write bug createPendingHomeAdmin's own rollback
+      // already exists to prevent.
+      await this.rollbackHomeMembership(existing.id, actorHomeId, error);
+      throw error;
+    }
+
     if (existing.isActive) {
       // Already has a password — no token/activation-link needed, just a
       // plain notification (see MailService.sendHomeAccessAddedEmail's
@@ -273,23 +330,6 @@ export class UsersService {
       // fresh invite, despite epics.md's AC #4 wording).
       this.mailService
         .sendHomeAccessAddedEmail(existing.email, homeName)
-        .catch(() => {});
-    } else {
-      let rawToken: string;
-      try {
-        rawToken = await this.passwordResetService.issueActivationToken(
-          existing.id,
-        );
-      } catch (error) {
-        // Code-review finding: without this, a token-issuance failure here
-        // left the HomeMembership committed with no token/email ever sent —
-        // the same partial-write bug createPendingHomeAdmin's own rollback
-        // already exists to prevent, just missing from this branch.
-        await this.rollbackHomeMembership(existing.id, actorHomeId, error);
-        throw error;
-      }
-      this.mailService
-        .sendAccountInviteEmail(existing.email, rawToken, homeName)
         .catch(() => {});
     }
 
@@ -351,7 +391,13 @@ export class UsersService {
       // response), mirroring AuthController.me().
       return await this.prisma.client.user.create({
         data: { email, role, isActive: false, name: name ?? null },
-        select: { id: true, email: true, name: true, role: true, isActive: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isActive: true,
+        },
       });
     } catch (error) {
       throw this.mapUniqueEmailViolation(error);

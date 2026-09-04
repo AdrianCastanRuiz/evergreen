@@ -27,3 +27,18 @@ export interface UpdateResidentRequest {
   dob?: string | null;
   profilePhotoPublicId?: string;
 }
+
+// Story 2.2: a family member linked to a resident, as shown on the admin
+// portal's link-management surface (GET /residents/:residentId/family-links).
+// Never the raw FamilyLink row's ids — just enough to identify who's linked.
+export interface FamilyLinkedMember {
+  id: string;
+  email: string;
+  name: string | null;
+}
+
+// Story 2.2 (AC #2): POST /residents/:residentId/family-links — admin picks
+// an existing, already-active family member of their home to link.
+export interface LinkFamilyMemberRequest {
+  userId: string;
+}

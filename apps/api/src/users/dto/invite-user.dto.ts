@@ -1,4 +1,11 @@
-import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import type { Role } from '../../../generated/prisma';
 import { Trim, TrimEmail } from '../../common/decorators/trim.decorator';
 
@@ -20,4 +27,11 @@ export class InviteUserDto {
   @MinLength(1)
   @MaxLength(255)
   name?: string;
+
+  // Story 2.2 (AC #1): only meaningful when role === 'family' — a no-op,
+  // not an error, when inviting 'staff' (UsersService.inviteUser ignores it
+  // for that branch rather than rejecting the request).
+  @IsOptional()
+  @IsUUID()
+  residentId?: string;
 }

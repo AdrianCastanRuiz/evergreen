@@ -42,4 +42,7 @@ export interface InviteUserRequest {
   email: string;
   role: Extract<Role, "staff" | "family">;
   name?: string;
+  // Story 2.2 (AC #1): only meaningful when role === "family" — creates a
+  // FamilyLink alongside the invite. Ignored (not an error) for "staff".
+  residentId?: string;
 }

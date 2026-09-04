@@ -120,6 +120,33 @@ describe('Residents — manage home residents (e2e)', () => {
     return { id: user.id, email };
   }
 
+  // Story 2.2 review finding: a pending (not-yet-activated) family invite
+  // already has a HomeMembership row from the moment of invite — distinct
+  // from an "active" one, which linkFamilyMember must reject.
+  async function seedPendingFamilyMember(
+    homeId: string,
+  ): Promise<{ id: string; email: string }> {
+    const email = `pending-family-${Date.now()}-${Math.random().toString(36).slice(2)}@e2e.evergreen.test`;
+    const user = await tenantContext.run(
+      { userId: null, role: 'super_admin', homeId: null, bypass: true },
+      async () =>
+        await prisma.client.user.create({
+          data: { email, role: 'family', isActive: false },
+        }),
+    );
+    seededUserIds.push(user.id);
+
+    await tenantContext.run(
+      { userId: null, role: 'super_admin', homeId: null, bypass: true },
+      async () =>
+        await prisma.client.homeMembership.create({
+          data: { userId: user.id, homeId, role: 'family' },
+        }),
+    );
+
+    return { id: user.id, email };
+  }
+
   async function seedResident(homeId: string, name: string): Promise<string> {
     const resident = await tenantContext.run(
       { userId: null, role: 'super_admin', homeId: null, bypass: true },
@@ -236,6 +263,139 @@ describe('Residents — manage home residents (e2e)', () => {
       .patch(`/residents/${residentId}`)
       .set('Authorization', `Bearer ${familyAToken}`)
       .send({ name: 'Nope' })
+      .expect(403);
+  });
+
+  // Story 2.2 (AC #2): links familyA (already active) to an additional
+  // resident without disturbing any link they already hold.
+  it('links an already-active family member to a resident (Story 2.2 AC #2)', async () => {
+    const residentId = await seedResident(homeA, 'To Be Linked');
+
+    await request(app.getHttpServer())
+      .post(`/residents/${residentId}/family-links`)
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .send({ userId: familyA.id })
+      .expect(201);
+
+    const listRes = await request(app.getHttpServer())
+      .get(`/residents/${residentId}/family-links`)
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .expect(200);
+    const links = listRes.body as { id: string; email: string }[];
+    expect(links.map((l) => l.id)).toContain(familyA.id);
+  });
+
+  it('rejects linking a resident from a different home (Story 2.2 AC #4)', async () => {
+    const homeB = await seedHome(`E2E Residents Home B ${Date.now()}`);
+    const residentB = await seedResident(homeB, 'Home B Resident');
+
+    await request(app.getHttpServer())
+      .post(`/residents/${residentB}/family-links`)
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .send({ userId: familyA.id })
+      .expect(404);
+  });
+
+  it('rejects linking a user who is not an active family member of this home', async () => {
+    const residentId = await seedResident(homeA, 'Guarded Link Target');
+
+    // staffA is a real member of homeA, but not role family.
+    await request(app.getHttpServer())
+      .post(`/residents/${residentId}/family-links`)
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .send({ userId: staffA.id })
+      .expect(404);
+  });
+
+  // Review finding (Blind Hunter): the one permutation that would prove the
+  // HomeMembership lookup is genuinely home-scoped (not just role-scoped)
+  // was untested — a family user who is a real member of a DIFFERENT home.
+  it('rejects linking a family user who belongs to a different home', async () => {
+    const homeB = await seedHome(`E2E Residents Home B ${Date.now()}`);
+    const familyB = await seedActiveUser('family', [homeB]);
+    const residentId = await seedResident(homeA, 'Cross-Home Link Target');
+
+    await request(app.getHttpServer())
+      .post(`/residents/${residentId}/family-links`)
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .send({ userId: familyB.id })
+      .expect(404);
+  });
+
+  // Review finding (Acceptance Auditor + Edge Case Hunter): a pending invite
+  // already has a HomeMembership row — linking must require the User itself
+  // to be active, not just present with role family (AC #2's "already
+  // active" precondition was previously enforced client-side only).
+  it('rejects linking a not-yet-activated (pending) family invitee', async () => {
+    const pendingFamily = await seedPendingFamilyMember(homeA);
+    const residentId = await seedResident(homeA, 'Pending Link Target');
+
+    await request(app.getHttpServer())
+      .post(`/residents/${residentId}/family-links`)
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .send({ userId: pendingFamily.id })
+      .expect(404);
+  });
+
+  it('rejects a duplicate link with 409', async () => {
+    const residentId = await seedResident(homeA, 'Duplicate Link Target');
+
+    await request(app.getHttpServer())
+      .post(`/residents/${residentId}/family-links`)
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .send({ userId: familyA.id })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/residents/${residentId}/family-links`)
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .send({ userId: familyA.id })
+      .expect(409);
+  });
+
+  // Story 2.2 (AC #5): AD-11's own enforcement (FamilyResidentGuard) is unit
+  // tested directly — no family-facing consumer route exists yet (Story
+  // 2.3/2.4). This proves the admin-facing removal API itself.
+  it('removes a family link (Story 2.2 AC #5)', async () => {
+    const residentId = await seedResident(homeA, 'To Be Unlinked');
+    await request(app.getHttpServer())
+      .post(`/residents/${residentId}/family-links`)
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .send({ userId: familyA.id })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .delete(`/residents/${residentId}/family-links/${familyA.id}`)
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .expect(204);
+
+    const listRes = await request(app.getHttpServer())
+      .get(`/residents/${residentId}/family-links`)
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .expect(200);
+    expect(listRes.body).toEqual([]);
+  });
+
+  it('404s removing a link that does not exist', async () => {
+    const residentId = await seedResident(homeA, 'Never Linked');
+
+    await request(app.getHttpServer())
+      .delete(`/residents/${residentId}/family-links/${familyA.id}`)
+      .set('Authorization', `Bearer ${adminAToken}`)
+      .expect(404);
+  });
+
+  it('rejects family-links routes for family and staff callers — home-admin-only (AC #5)', async () => {
+    const residentId = await seedResident(homeA, 'Guarded Family Links');
+
+    await request(app.getHttpServer())
+      .post(`/residents/${residentId}/family-links`)
+      .set('Authorization', `Bearer ${staffAToken}`)
+      .send({ userId: familyA.id })
+      .expect(403);
+    await request(app.getHttpServer())
+      .get(`/residents/${residentId}/family-links`)
+      .set('Authorization', `Bearer ${familyAToken}`)
       .expect(403);
   });
 });
