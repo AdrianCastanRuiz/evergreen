@@ -138,10 +138,17 @@ export async function request<T>(
     throw new ApiError(response.status, code, message, details);
   }
 
-  // 204 No Content (e.g. POST /auth/logout).
-  if (response.status === 204) return undefined as T;
-
-  return (await response.json()) as T;
+  // Empty body on an otherwise-successful response — 204 No Content (e.g.
+  // POST /auth/logout) is the explicit convention, but a 201/200 with no
+  // body (e.g. POST /residents/:residentId/family-links, a Promise<void>
+  // route) is equally valid and must not attempt response.json() on it:
+  // that throws "Unexpected end of JSON input" on an empty string, which
+  // surfaced a successful link/unlink as a generic client-side failure
+  // (bug found via manual browser verification of Story 2.2 — the mutation
+  // had actually already succeeded server-side when this fired).
+  const text = await response.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 /**
