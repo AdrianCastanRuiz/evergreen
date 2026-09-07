@@ -19,6 +19,7 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 
 import { useAuth, AuthProvider } from "@/lib/auth";
 import { queryClient, queryPersister } from "@/lib/query-client";
+import { ResidentProvider, useResidents } from "@/lib/resident-context";
 
 // Expo only inlines process.env.EXPO_PUBLIC_* into the client bundle —
 // SENTRY_DSN without the prefix would be undefined at runtime (AD-15).
@@ -48,18 +49,66 @@ const FONTS = {
 // bug after a successful resolve).
 function RootNavigator() {
   const { status, user } = useAuth();
+  // Story 2.3 (Task 6): the family "has a linked resident?" gate. The
+  // linked-residents list is fetched here (via ResidentProvider, enabled only
+  // for authenticated family) so it is known BEFORE the Stack.Protected
+  // guards below evaluate — closing the gap the old comment left open ("the
+  // gate has no data source yet"). A family member with zero links is routed
+  // to onboarding instead of (tabs), per EXPERIENCE.md's State Patterns.
+  const { residents, isLoading, error } = useResidents();
+
+  const isFamily = status === "authenticated" && user?.role === "family";
+  // `isLoading` is true only while the first fetch is in flight (no cached
+  // data yet) and goes false once it settles — whether with data, an empty
+  // array, or an error. So "known" = resolved, never shares the "resolving"
+  // branch (which previously held the splash forever when the fetch failed).
+  const residentsKnown = isFamily ? !isLoading : true;
+  const hasResidents = isFamily ? (residents?.length ?? 0) > 0 : true;
+  // A FAILED fetch (offline, 5xx) is NOT "zero residents": routing an errored
+  // family to onboarding would be wrong. Send them to (tabs), whose Home
+  // screen surfaces the inline error + Retry instead.
+  const residentsErrored = isFamily ? error != null : false;
+
+  // While the family resident list is still RESOLVING (not resolved-with-an-
+  // error), hold the splash (index) rather than flash the wrong route — the
+  // same "extend the existing resolving pattern" approach as the auth splash
+  // (Story 1.6), not a second, parallel loading state.
+  const showSplash = status === "resolving" || (isFamily && !residentsKnown);
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Protected guard={status === "resolving"}>
+      <Stack.Protected guard={showSplash}>
         <Stack.Screen name="index" />
       </Stack.Protected>
       {/* Family → the (tabs) group with Home/Photos/Events/Menu/News (FR10,
-          Story 1.10 AC #1). Per Story 1.10's ask-first decision, a family
-          member is routed here directly — the "has a linked resident?" gate
-          has no data source yet (Epic 2 backlog). */}
-      <Stack.Protected guard={status === "authenticated" && user?.role === "family"}>
+          Story 1.10 AC #1). Story 2.3 closes the "has a linked resident?"
+          gate: a family member lands here once we know they have at least one
+          linked resident — OR when the fetch errored (the Home screen shows
+          the inline error + Retry, so they don't fall to onboarding on a
+          transient failure). */}
+      <Stack.Protected guard={isFamily && residentsKnown && (hasResidents || residentsErrored)}>
         <Stack.Screen name="(tabs)" />
+      </Stack.Protected>
+      {/* Unauthenticated anchor is login (declared first among this block and
+          before home/profile so it wins for anonymous users). request-password-
+          reset is also public. These two stay gated on `unauthenticated` ONLY:
+          an already-authenticated family member must NOT be able to land back
+          on login (they'd be stuck — see the onboarding block below). */}
+      <Stack.Protected guard={status === "unauthenticated"}>
+        <Stack.Screen name="login" />
+        <Stack.Screen name="request-password-reset" />
+      </Stack.Protected>
+      {/* onboarding is a public invite-code flow (Story 1.8, FR5): reachable
+          logged out (login screen's "Have an invite code?" link / emailed deep
+          link). Story 2.3 ALSO routs an authenticated family member with ZERO
+          linked residents here (EXPERIENCE.md State Patterns). It is gated
+          separately from login so that a logged-in zero-link family is not left
+          on the login form: expo-router redirects to the FIRST available
+          screen, and onboarding is the only one open for them. Must stay after
+          (tabs) — an authenticated family WITH residents keeps landing on tabs —
+          and before home/profile. */}
+      <Stack.Protected guard={status === "unauthenticated" || (isFamily && residentsKnown && !hasResidents && !residentsErrored)}>
+        <Stack.Screen name="onboarding" />
       </Stack.Protected>
       {/* Staff (and non-family) → single-screen, no tab bar (Story 1.10 AC #2).
           Admin/super_admin keep this screen on mobile (portal is their home). */}
@@ -70,19 +119,6 @@ function RootNavigator() {
           regardless of role. */}
       <Stack.Protected guard={status === "authenticated"}>
         <Stack.Screen name="profile" />
-      </Stack.Protected>
-      {/* Unauthenticated anchor is login (declared first). onboarding is a
-          public invite-code flow (Story 1.8, FR5): a pending family member has
-          NO session (they can't authenticate until they set a password), so it
-          must be reachable logged out — via the login screen's "Have an invite
-          code?" link or the emailed deep link (?code=...). It MUST stay
-          declared after (tabs): expo-router redirects to the first available
-          screen, so an already-authenticated family keeps landing on tabs, not
-          here. */}
-      <Stack.Protected guard={status === "unauthenticated"}>
-        <Stack.Screen name="login" />
-        <Stack.Screen name="request-password-reset" />
-        <Stack.Screen name="onboarding" />
       </Stack.Protected>
       {/* reset-password must stay reachable while "resolving" so a cold-start
           deep link from the emailed reset URL lands here before /auth/me
@@ -110,14 +146,16 @@ export default function RootLayout() {
           persistOptions={{ persister: queryPersister }}
         >
           <AuthProvider>
-            {renderApp ? (
-              <>
-                <RootNavigator />
+            <ResidentProvider>
+              {renderApp ? (
+                <>
+                  <RootNavigator />
+                  <StatusBar style="auto" />
+                </>
+              ) : (
                 <StatusBar style="auto" />
-              </>
-            ) : (
-              <StatusBar style="auto" />
-            )}
+              )}
+            </ResidentProvider>
           </AuthProvider>
         </PersistQueryClientProvider>
       </SafeAreaProvider>

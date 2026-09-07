@@ -1,19 +1,32 @@
 import * as React from "react";
 import { router } from "expo-router";
+import { ActivityIndicator, View } from "react-native";
 
+import { ResidentSwitcher } from "@/components/resident-switcher";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/auth";
+import { useResidents } from "@/lib/resident-context";
 
-// Family Home tab (FR10, UX-DR13). Placeholder established by Story 1.10;
-// the resident-profile-card / linked-resident content lands in Epic 2
-// (Story 2.3/2.4). Hosts the two session actions family needs (FR4/FR9):
-// My Profile and Log out — family no longer reaches home.tsx (that screen is
-// now the staff/non-family single screen), so the tab shell is where family
-// closes the session.
+// Family Home tab (FR10, UX-DR13). Story 2.3 (AC #1/#2): renders the linked
+// resident(s) switcher (2-3 pills / 4+ dropdown) above a minimal resident
+// summary card (name/room/photo) for the active resident. The card's visual
+// polish (skeletons, exact layout) is Story 2.4's scope — this story renders
+// a minimal-but-real card from the same linked-residents data.
+//
+// The single-resident case (AC #1) intentionally shows NO switcher — just the
+// card. The zero-linked case is structurally unreachable once the _layout.tsx
+// gate (Task 6) routes zero-link family to onboarding, but is handled
+// defensively here rather than crashing.
+//
+// Hosts the two session actions family needs (FR4/FR9): My Profile and Log
+// out.
 export default function HomeTabScreen() {
   const { signOut } = useAuth();
+  const { residents, isLoading, error, refetch, activeResidentId, setActiveResidentId } =
+    useResidents();
   const [loggingOut, setLoggingOut] = React.useState(false);
 
   const handleLogOut = async () => {
@@ -26,18 +39,89 @@ export default function HomeTabScreen() {
     }
   };
 
-  return (
-    <EmptyState title="Home" body="Your home content will appear here soon.">
-      <Button
-        variant="outline"
-        disabled={loggingOut}
-        onPress={() => router.push("/profile")}
+  if (isLoading && !residents) {
+    return (
+      <View className="flex-1 items-center justify-center bg-background">
+        <ActivityIndicator className="text-primary" />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <EmptyState
+        title="Home"
+        body="We couldn't load your residents. Check your connection and try again."
       >
-        <Text>My Profile</Text>
-      </Button>
-      <Button variant="outline" disabled={loggingOut} onPress={handleLogOut}>
-        <Text>Log out</Text>
-      </Button>
-    </EmptyState>
+        <Button variant="outline" onPress={() => void refetch()}>
+          <Text>Retry</Text>
+        </Button>
+        <Button variant="outline" onPress={() => router.push("/profile")}>
+          <Text>My Profile</Text>
+        </Button>
+        <Button variant="outline" disabled={loggingOut} onPress={handleLogOut}>
+          <Text>Log out</Text>
+        </Button>
+      </EmptyState>
+    );
+  }
+
+  const list = residents ?? [];
+  const activeResident = list.find((r) => r.id === activeResidentId);
+
+  if (list.length === 0) {
+    // Defensive, per UX-DR17/EXPERIENCE.md: Task 6's gate should have routed
+    // zero-link family to onboarding, so this is normally unreachable.
+    return (
+      <EmptyState
+        title="Home"
+        body="No residents are linked to your account yet."
+      >
+        <Button variant="outline" disabled={loggingOut} onPress={handleLogOut}>
+          <Text>Log out</Text>
+        </Button>
+      </EmptyState>
+    );
+  }
+
+  return (
+    <View className="flex-1 bg-background px-gutter pt-16">
+      {list.length >= 2 ? (
+        <ResidentSwitcher
+          residents={list}
+          activeResidentId={activeResidentId}
+          onSelect={setActiveResidentId}
+        />
+      ) : null}
+
+      {activeResident ? (
+        <Card className="mt-4">
+          <Text className="text-sm font-medium text-muted-foreground">
+            {activeResident.room ? `Room ${activeResident.room}` : "Resident"}
+          </Text>
+          <Text className="mt-1 font-heading text-2xl text-foreground">
+            {activeResident.name}
+          </Text>
+        </Card>
+      ) : null}
+
+      <View className="mt-auto pb-8">
+        <Button
+          variant="outline"
+          disabled={loggingOut}
+          onPress={() => router.push("/profile")}
+        >
+          <Text>My Profile</Text>
+        </Button>
+        <Button
+          className="mt-3"
+          variant="outline"
+          disabled={loggingOut}
+          onPress={handleLogOut}
+        >
+          <Text>Log out</Text>
+        </Button>
+      </View>
+    </View>
   );
 }

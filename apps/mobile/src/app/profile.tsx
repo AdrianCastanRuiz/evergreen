@@ -16,12 +16,13 @@ const EMAIL_RE = /^\S+@\S+\.\S+$/;
 // apps/admin/src/routes/login.tsx (Story 1.14) — the first time this
 // pattern is needed on the mobile side.
 export default function ProfileScreen() {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, signOut } = useAuth();
   const [name, setName] = React.useState(user?.name ?? "");
   const [email, setEmail] = React.useState(user?.email ?? "");
   const [nameTouched, setNameTouched] = React.useState(false);
   const [emailTouched, setEmailTouched] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
+  const [loggingOut, setLoggingOut] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState(false);
 
@@ -42,6 +43,16 @@ export default function ProfileScreen() {
     setEmail(value);
     setSaved(false);
     setError(null);
+  };
+
+  const handleLogOut = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await signOut();
+    } finally {
+      setLoggingOut(false);
+    }
   };
 
   const handleSave = async () => {
@@ -144,6 +155,20 @@ export default function ProfileScreen() {
         ) : (
           <Text>Save</Text>
         )}
+      </Button>
+
+      {/* Story 2.3 manual-testing fix: profile is the one screen reachable by
+          ANY authenticated user, including a zero-link family member who has
+          no (tabs) home (FR9 — closing the session must always be possible).
+          Without this, a zero-link family could get stuck with no path to
+          sign out. */}
+      <Button
+        variant="outline"
+        className="mt-3"
+        disabled={loggingOut}
+        onPress={handleLogOut}
+      >
+        <Text>Log out</Text>
       </Button>
     </View>
   );
