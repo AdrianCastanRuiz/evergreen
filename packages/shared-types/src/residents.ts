@@ -42,3 +42,15 @@ export interface FamilyLinkedMember {
 export interface LinkFamilyMemberRequest {
   userId: string;
 }
+
+// Story 2.3 (AC #1, #2): a family member's own linked residents as returned
+// by GET /residents/linked. Deliberately a subset of `Resident` — no homeId
+// echoed back to a caller who may belong to several homes (AD-18). What the
+// family Home screen card needs and nothing more.
+export interface LinkedResident {
+  id: string;
+  name: string;
+  room: string | null;
+  dob: string | null;
+  profilePhotoPublicId: string | null;
+}

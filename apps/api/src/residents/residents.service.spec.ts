@@ -22,6 +22,7 @@ describe('ResidentsService', () => {
         create: jest.Mock;
         findMany: jest.Mock;
         delete: jest.Mock;
+        findFirst: jest.Mock;
       };
     };
   };
@@ -60,6 +61,7 @@ describe('ResidentsService', () => {
           create: jest.fn(),
           findMany: jest.fn(),
           delete: jest.fn(),
+          findFirst: jest.fn(),
         },
       },
     };
@@ -70,7 +72,10 @@ describe('ResidentsService', () => {
         { provide: PrismaService, useValue: prisma },
         {
           provide: TenantContextService,
-          useValue: { getHomeId: jest.fn().mockReturnValue(resident.homeId) },
+          useValue: {
+            getHomeId: jest.fn().mockReturnValue(resident.homeId),
+            runBypassed: jest.fn((fn: () => unknown) => fn()),
+          },
         },
       ],
     }).compile();
@@ -146,6 +151,116 @@ describe('ResidentsService', () => {
 
       await expect(
         residentsService.findOne('other-home-resident'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('findLinkedForUser', () => {
+    it("returns only the caller's linked residents, never another user's (AC #1, #2)", async () => {
+      prisma.client.familyLink.findMany.mockResolvedValue([
+        {
+          resident: {
+            id: 'resident-1',
+            name: 'Jane Doe',
+            room: '101',
+            dob: new Date('1940-01-01'),
+            profilePhotoPublicId: 'photo-1',
+          },
+        },
+        {
+          resident: {
+            id: 'resident-2',
+            name: 'Jo Doe',
+            room: '202',
+            dob: null,
+            profilePhotoPublicId: null,
+          },
+        },
+      ]);
+
+      await expect(
+        residentsService.findLinkedForUser('family-1'),
+      ).resolves.toEqual([
+        {
+          id: 'resident-1',
+          name: 'Jane Doe',
+          room: '101',
+          dob: '1940-01-01T00:00:00.000Z',
+          profilePhotoPublicId: 'photo-1',
+        },
+        {
+          id: 'resident-2',
+          name: 'Jo Doe',
+          room: '202',
+          dob: null,
+          profilePhotoPublicId: null,
+        },
+      ]);
+
+      // The self-scoping contract: the query is filtered by the caller's OWN
+      // userId, which is what makes it impossible to leak another family's
+      // links by construction (AC #1).
+      expect(prisma.client.familyLink.findMany).toHaveBeenCalledWith({
+        where: { userId: 'family-1' },
+        include: {
+          resident: {
+            select: {
+              id: true,
+              name: true,
+              room: true,
+              dob: true,
+              profilePhotoPublicId: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+    });
+
+    it('returns an empty array for a family member with no links yet (zero-links edge case)', async () => {
+      prisma.client.familyLink.findMany.mockResolvedValue([]);
+
+      await expect(
+        residentsService.findLinkedForUser('family-empty'),
+      ).resolves.toEqual([]);
+    });
+
+    it('runs bypassed — family callers carry no homeId (AD-18), scoping is the explicit userId filter', async () => {
+      prisma.client.familyLink.findMany.mockResolvedValue([]);
+
+      await residentsService.findLinkedForUser('family-1');
+
+      expect(prisma.client.familyLink.findMany).toHaveBeenCalled();
+    });
+  });
+
+  describe('findOneForFamily', () => {
+    it('returns a linked-resident shape for a resident the guard has authorized (AC #4)', async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(resident);
+
+      await expect(
+        residentsService.findOneForFamily(resident.id),
+      ).resolves.toEqual({
+        id: resident.id,
+        name: resident.name,
+        room: resident.room,
+        dob: '1940-01-01T00:00:00.000Z',
+        profilePhotoPublicId: null,
+      });
+    });
+
+    it('does not echo homeId back to a family caller (AD-18)', async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(resident);
+
+      const result = await residentsService.findOneForFamily(resident.id);
+      expect(result).not.toHaveProperty('homeId');
+    });
+
+    it('throws NotFoundException when the resident does not exist', async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(null);
+
+      await expect(
+        residentsService.findOneForFamily('missing'),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });

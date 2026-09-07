@@ -21,6 +21,21 @@ export interface LinkedFamilyMember {
   name: string | null;
 }
 
+// Story 2.3 (AC #1, #2): a family member's own linked residents, as returned
+// by GET /residents/linked and GET /residents/:residentId for a family
+// caller. A subset of `Resident` — deliberately no homeId, which a family
+// user who belongs to several homes should never be told about (AD-18).
+// Mirrored in data shape by @evergreen/shared-types' LinkedResident for the
+// mobile client (the API stays on nodenext and defines local types here, the
+// same split as LinkedFamilyMember).
+export interface LinkedResident {
+  id: string;
+  name: string;
+  room: string | null;
+  dob: string | null;
+  profilePhotoPublicId: string | null;
+}
+
 // Story 2.1: `Resident` is already in TENANT_SCOPED_MODELS
 // (apps/api/src/prisma/tenant-scoped-models.ts), so every call below is
 // auto-scoped to the caller's home_id by the tenant-scoping Prisma
@@ -64,6 +79,63 @@ export class ResidentsService {
     // resolves to null here, never another home's row (AC #4).
     if (!resident) throw new NotFoundException('Resident not found');
     return resident;
+  }
+
+  // Story 2.3 (AC #1, #2): a family member's own linked residents. Family
+  // callers have no homeId in the tenant store (AD-18 — a family user can
+  // belong to several homes), so FamilyLink/Resident cannot be read through
+  // the tenant-scoping extension's normal auto-injected-homeId path. The
+  // WHERE userId = caller filter IS the scoping here — FamilyLink rows are
+  // keyed by the caller's own id, so this is self-scoped by construction and
+  // can never leak another family's links (AC #1). runBypassed is safe for
+  // the same reason the guard relies on it: the explicit filter replaces the
+  // injected home_id.
+  async findLinkedForUser(userId: string): Promise<LinkedResident[]> {
+    const links = await this.tenantContext.runBypassed(() =>
+      this.prisma.client.familyLink.findMany({
+        where: { userId },
+        include: {
+          resident: {
+            select: {
+              id: true,
+              name: true,
+              room: true,
+              dob: true,
+              profilePhotoPublicId: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+    );
+
+    return links.map((link) => ({
+      id: link.resident.id,
+      name: link.resident.name,
+      room: link.resident.room,
+      dob: link.resident.dob ? link.resident.dob.toISOString() : null,
+      profilePhotoPublicId: link.resident.profilePhotoPublicId,
+    }));
+  }
+
+  // Story 2.3 (AC #4): the family-facing single-resident read. The route is
+  // guarded by FamilyResidentGuard (AD-11), which fails CLOSED unless the
+  // family caller holds a live FamilyLink to this resident in a home they
+  // still belong to — so this lookup is safe to runBypass with the explicit
+  // id; the guard has already authorized it. Never returns a resident the
+  // guard did not already vet.
+  async findOneForFamily(id: string): Promise<LinkedResident> {
+    const resident = await this.tenantContext.runBypassed(() =>
+      this.prisma.client.resident.findUnique({ where: { id } }),
+    );
+    if (!resident) throw new NotFoundException('Resident not found');
+    return {
+      id: resident.id,
+      name: resident.name,
+      room: resident.room,
+      dob: resident.dob ? resident.dob.toISOString() : null,
+      profilePhotoPublicId: resident.profilePhotoPublicId,
+    };
   }
 
   async update(id: string, dto: UpdateResidentDto): Promise<Resident> {

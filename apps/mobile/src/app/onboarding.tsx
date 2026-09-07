@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Text } from "@/components/ui/text";
 import { ApiError, NetworkError, request } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 // Story 1.8 (FR5): a pending family member invited by a care home (Story 1.5)
 // resolves their account here — enter the invite code + set a password, which
@@ -26,6 +27,7 @@ import { ApiError, NetworkError, request } from "@/lib/api";
 // new password and lands on the (tabs) home (Story 1.10).
 export default function OnboardingScreen() {
   const { code: deepLinkCode } = useLocalSearchParams<{ code?: string }>();
+  const { status, signOut } = useAuth();
 
   const [inviteCode, setInviteCode] = React.useState(
     typeof deepLinkCode === "string" ? deepLinkCode : "",
@@ -33,7 +35,26 @@ export default function OnboardingScreen() {
   const [password, setPassword] = React.useState("");
   const [confirm, setConfirm] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
+  const [loggingOut, setLoggingOut] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  // Story 2.3 (Task 6) reuses onboarding as the landing for an authenticated
+  // family with zero linked residents. For THAT user, login is gated to
+  // `unauthenticated` (see _layout.tsx), so the bootm's router.replace("/login")
+  // would silently do nothing while they're logged in. The "Sign in" button
+  // must FIRST close the session, then hand off to login.
+  const handleGoToLogin = async () => {
+    if (loggingOut) return;
+    if (status === "authenticated") {
+      setLoggingOut(true);
+      try {
+        await signOut();
+      } finally {
+        setLoggingOut(false);
+      }
+    }
+    router.replace("/login");
+  };
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -153,8 +174,8 @@ export default function OnboardingScreen() {
         <Button
           className="mt-4 w-full rounded-[12px]"
           variant="outline"
-          disabled={submitting}
-          onPress={() => router.replace("/login")}
+          disabled={submitting || loggingOut}
+          onPress={handleGoToLogin}
         >
           <Text>Already have an account? Sign in</Text>
         </Button>
