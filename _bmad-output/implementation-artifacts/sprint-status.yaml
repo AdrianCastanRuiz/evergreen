@@ -1,5 +1,5 @@
 # generated: 2026-08-06
-# last_updated: 2026-08-24
+# last_updated: 2026-09-07
 # project: evergreen
 # project_key: NOKEY
 # tracking_system: file-system
@@ -71,7 +71,7 @@ development_status:
   2-1-admins-crean-y-gestionan-perfiles-de-residentes-por-care-home: done # issue #30
   2-2-admins-vinculan-cuentas-familiares-a-residentes-especificos: done # issue #31 — PR: https://github.com/AdrianCastanRuiz/evergreen/pull/31 (open)
   2-3-familia-ve-la-lista-de-residentes-vinculados: review # issue #32
-  2-4-familia-ve-el-perfil-de-un-residente: ready-for-dev # issue #33
+  2-4-familia-ve-el-perfil-de-un-residente: review # issue #33
   epic-2-retrospective: optional
 
   epic-3: backlog
