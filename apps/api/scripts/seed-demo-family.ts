@@ -28,9 +28,9 @@ const PASSWORD = 'Demo12345!';
 const HOME_NAME = 'Story 2.3 Demo Home';
 
 const RESIDENTS = [
-  { name: 'Ada Lovelace', room: '101' },
-  { name: 'Grace Hopper', room: '102' },
-  { name: 'Alan Turing', room: '103' },
+  { name: 'Ada Lovelace', room: '101', dob: '1815-12-10T00:00:00Z' },
+  { name: 'Grace Hopper', room: '102', dob: '1906-12-09T00:00:00Z' },
+  { name: 'Alan Turing', room: '103', dob: '1912-06-23T00:00:00Z' },
 ];
 
 async function main() {
@@ -80,8 +80,19 @@ async function seedForHome(
       const existing = await tx.resident.findFirst({
         where: { homeId, name },
       });
-      if (existing) return existing;
-      return tx.resident.create({ data: { homeId, name, room: r.room } });
+      if (existing) {
+        // Idempotent, but still reconcile dob/room on re-runs so a resident
+        // created by an earlier seed (pre-Story 2.4, no dob) picks it up.
+        return tx.resident.update({
+          where: { id: existing.id },
+          data: { room: r.room, dob: r.dob },
+        });
+      }
+      // Story 2.1 sealed `dob` as nullable (Resident.dob: string | null). Set
+      // it so the card's DOB line renders during manual testing of 2.4 (AC #1).
+      return tx.resident.create({
+        data: { homeId, name, room: r.room, dob: r.dob },
+      });
     });
     residentIds.push(resident.id);
     console.log(`Resident: ${resident.name} (${resident.id})`);
