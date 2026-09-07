@@ -42,7 +42,7 @@ export function ResidentProfileCard({ resident }: ResidentProfileCardProps) {
   const meta = [room, dob ? `DOB ${dob}` : null].filter(Boolean).join(" · ");
 
   return (
-    <View className="relative flex-row items-center gap-3 overflow-hidden rounded-md border border-border bg-card p-card-padding pl-[22px]">
+    <View className="relative flex-row items-center gap-3 overflow-hidden rounded-md border border-border bg-card pb-card-padding pt-card-padding pr-card-padding pl-[22px]">
       {/* Accent bar along the leading edge (DESIGN.md component spec). */}
       <View className="pointer-events-none absolute bottom-0 left-0 top-0 w-[6px] bg-primary" />
 
@@ -62,7 +62,10 @@ export function ResidentProfileCard({ resident }: ResidentProfileCardProps) {
       )}
 
       <View className="flex-1">
-        <Text className="font-heading text-[22px] leading-[26px] text-foreground">
+        <Text
+          numberOfLines={1}
+          className="font-heading text-[22px] leading-[26px] text-foreground"
+        >
           {resident.name}
         </Text>
         {meta ? (
@@ -79,7 +82,9 @@ export function ResidentProfileCard({ resident }: ResidentProfileCardProps) {
 // arrives. Rendered as a sibling export so (tabs)/index.tsx can swap it in.
 export function ResidentProfileCardSkeleton() {
   return (
-    <View className="flex-row items-center gap-3 overflow-hidden rounded-md border border-border bg-card p-card-padding pl-[22px]">
+    <View className="relative flex-row items-center gap-3 overflow-hidden rounded-md border border-border bg-card pb-card-padding pt-card-padding pr-card-padding pl-[22px]">
+      {/* Accent bar mirrored from the real card (M1, UX-DR30 layout-match). */}
+      <View className="pointer-events-none absolute bottom-0 left-0 top-0 w-[6px] bg-primary/40" />
       <Skeleton className="h-16 w-16 rounded-full" />
       <View className="flex-1">
         <Skeleton className="h-5 w-2/3 rounded-sm" />
