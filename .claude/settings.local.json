@@ -1,6 +1,5 @@
 {
   "permissions": {
-    "defaultMode": "bypassPermissions",
     "allow": [
       "Bash(python _bmad/scripts/memlog.py append --workspace \"_bmad-output/planning-artifacts/ux-designs/ux-evergreen-2026-07-01\" --type decision --text \"Source confirmed: PRD at _bmad-output/planning-artifacts/prd.md is the sole UX source\")",
       "Bash(python _bmad/scripts/memlog.py append --workspace \"_bmad-output/planning-artifacts/ux-designs/ux-evergreen-2026-07-01\" --type event --text \"PRD extracted: multi-tenant care-home family app \\(React Native mobile + React web admin portal\\), 4 personas \\(Maria/familia, Sarah/staff, James/home admin, Priya/super admin\\), B2B2C non-clinical, no accessibility/i18n/brand signals in PRD\")",
@@ -12,7 +11,16 @@
       "Bash(cat extracted/docProps/core.xml)",
       "Bash(cat extracted/docProps/app.xml)",
       "Bash(curl -s \"https://evergreen-homecare.com/wp-content/plugins/elementor/assets/css/frontend.min.css\")",
-      "Bash(python3 -c ' *)"
-    ]
-  }
+      "Bash(python3 -c ' *)",
+      "mcp__issues-tracker__issues-list",
+      "Bash(git -C \"C:\\\\Users\\\\UsuariE\\\\Desktop\\\\evergreen-proyecto\\\\evergreen\" log --oneline -20)",
+      "Bash(git -C \"C:\\\\Users\\\\UsuariE\\\\Desktop\\\\evergreen-proyecto\\\\evergreen\" status)",
+      "mcp__issues-tracker__issues-get",
+      "Bash(python3 _bmad/scripts/resolve_customization.py --skill \"C:\\\\Users\\\\UsuariE\\\\.claude\\\\skills\\\\bmad-dev-story\" --key workflow)"
+    ],
+    "defaultMode": "bypassPermissions"
+  },
+  "enabledMcpjsonServers": [
+    "issues-tracker"
+  ]
 }
