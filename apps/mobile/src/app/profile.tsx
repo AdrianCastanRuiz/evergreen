@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { ApiError, authedRequest, NetworkError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useLogOut } from "@/lib/use-log-out";
 
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
@@ -16,13 +17,13 @@ const EMAIL_RE = /^\S+@\S+\.\S+$/;
 // apps/admin/src/routes/login.tsx (Story 1.14) — the first time this
 // pattern is needed on the mobile side.
 export default function ProfileScreen() {
-  const { user, updateUser, signOut } = useAuth();
+  const { user, updateUser } = useAuth();
+  const { handleLogOut, loggingOut } = useLogOut();
   const [name, setName] = React.useState(user?.name ?? "");
   const [email, setEmail] = React.useState(user?.email ?? "");
   const [nameTouched, setNameTouched] = React.useState(false);
   const [emailTouched, setEmailTouched] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
-  const [loggingOut, setLoggingOut] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState(false);
 
@@ -43,16 +44,6 @@ export default function ProfileScreen() {
     setEmail(value);
     setSaved(false);
     setError(null);
-  };
-
-  const handleLogOut = async () => {
-    if (loggingOut) return;
-    setLoggingOut(true);
-    try {
-      await signOut();
-    } finally {
-      setLoggingOut(false);
-    }
   };
 
   const handleSave = async () => {
