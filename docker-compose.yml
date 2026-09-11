@@ -15,5 +15,26 @@ services:
       - evergreen-postgres-data:/var/lib/postgresql/data
       - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
 
+  # Optional local GUI for the Postgres above. Behind a profile so it never
+  # starts from a plain `docker compose up -d` (what the team/README/CI use)
+  # — bring it up explicitly with `docker compose --profile tools up -d pgadmin`.
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: evergreen-pgadmin
+    restart: unless-stopped
+    profiles: ["tools"]
+    depends_on:
+      - postgres
+    environment:
+      # Not a real domain, just needs to look like a valid email — pgAdmin's
+      # validator rejects RFC 2606 reserved TLDs (.local/.test/.example).
+      PGADMIN_DEFAULT_EMAIL: admin@evergreen.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    volumes:
+      - evergreen-pgadmin-data:/var/lib/pgadmin
+
 volumes:
   evergreen-postgres-data:
+  evergreen-pgadmin-data:
