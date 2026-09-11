@@ -43,10 +43,13 @@ export function ResidentSwitcher({
           className="flex-row items-center justify-between rounded-full border border-border bg-background px-4 py-2"
           onPress={() => setOpen((v) => !v)}
         >
-          <Text className="text-sm font-medium text-foreground">
+          <Text
+            numberOfLines={1}
+            className="flex-1 text-sm font-medium text-foreground"
+          >
             {activeResident?.name ?? "Select resident"}
           </Text>
-          <Text className="ml-2 text-muted-foreground">
+          <Text className="ml-2 shrink-0 text-muted-foreground">
             {open ? "\u25B2" : "\u25BC"}
           </Text>
         </Pressable>
@@ -66,6 +69,7 @@ export function ResidentSwitcher({
                   onPress={() => handleSelect(r.id)}
                 >
                   <Text
+                    numberOfLines={1}
                     className={cn(
                       "text-sm",
                       isActive ? "font-medium text-foreground" : "text-muted-foreground",
@@ -97,7 +101,7 @@ export function ResidentSwitcher({
             accessibilityRole="button"
             accessibilityLabel={`${r.name}${isActive ? ", selected" : ""}`}
             className={cn(
-              "rounded-full border px-3 py-2",
+              "max-w-[200px] rounded-full border px-3 py-2",
               isActive
                 ? "border-primary bg-primary"
                 : "border-border bg-background",
@@ -105,6 +109,7 @@ export function ResidentSwitcher({
             onPress={() => handleSelect(r.id)}
           >
             <Text
+              numberOfLines={1}
               className={cn(
                 "text-sm",
                 isActive ? "font-medium text-primary-foreground" : "text-muted-foreground",
