@@ -3,6 +3,7 @@ import { createRoute, Link, Navigate } from "@tanstack/react-router";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { ApiError, NetworkError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { rootRoute } from "@/routes/root";
@@ -104,7 +105,6 @@ function LoginScreen() {
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          onBlur={() => setEmailTouched(true)}
           autoComplete="email"
           autoFocus
           disabled={submitting}
@@ -114,10 +114,9 @@ function LoginScreen() {
         <label htmlFor="password" className="mt-4 block text-sm font-medium text-foreground">
           Password
         </label>
-        <Input
+        <PasswordInput
           id="password"
           className="mt-1"
-          type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           onBlur={() => setPasswordTouched(true)}
