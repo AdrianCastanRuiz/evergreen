@@ -61,7 +61,7 @@ export function ResidentSwitcher({
   };
 
   return (
-    <View>
+    <View className="relative z-10">
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Switch resident"
@@ -84,7 +84,20 @@ export function ResidentSwitcher({
       </Pressable>
 
       {open ? (
-        <View className="mt-1.5 gap-0.5 rounded-md border border-border bg-card p-1.5">
+        // Absolutely positioned so it floats OVER whatever sits below the
+        // switcher (the active resident's profile card) instead of pushing
+        // it down — the switcher's own wrapper carries `z-10` above so this
+        // overlay paints over that later sibling rather than behind it.
+        <View
+          style={{
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.15,
+            shadowRadius: 8,
+            elevation: 6,
+          }}
+          className="absolute left-0 right-0 top-full z-20 mt-1.5 gap-0.5 rounded-md border border-border bg-card p-1.5"
+        >
           {residents.map((r) => {
             const isActive = r.id === activeResidentId;
             return (
