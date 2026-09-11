@@ -5,6 +5,7 @@ import type {
   HomeUserSummary,
   InviteUserRequest,
   PendingUserResponse,
+  Resident,
   UpdateUserRoleRequest,
 } from "@evergreen/shared-types";
 
@@ -41,6 +42,15 @@ const HOME_USERS_QUERY_KEY = ["users"] as const;
 
 function listHomeUsers(): Promise<HomeUserSummary[]> {
   return authedRequest<HomeUserSummary[]>("/users");
+}
+
+// Same query key as residents.tsx's RESIDENTS_QUERY_KEY — both screens list
+// the caller's own home, so sharing the cache avoids a redundant refetch
+// when an admin moves between Residents and Family.
+const RESIDENTS_QUERY_KEY = ["residents"] as const;
+
+function listResidents(): Promise<Resident[]> {
+  return authedRequest<Resident[]>("/residents");
 }
 
 function inviteUser(body: InviteUserRequest): Promise<PendingUserResponse> {
@@ -284,11 +294,26 @@ function InviteUserForm({ role, onInvited, onCancel }: InviteUserFormProps) {
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [emailTouched, setEmailTouched] = React.useState(false);
+  const [residentId, setResidentId] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
+
+  // Story 2.2 (AC #1): a resident link is only meaningful for a family
+  // invite — the API ignores residentId as a no-op for staff, but there's no
+  // reason to fetch the home's residents at all for a staff invite.
+  const residentsQuery = useQuery({
+    queryKey: RESIDENTS_QUERY_KEY,
+    queryFn: listResidents,
+    enabled: role === "family",
+  });
 
   const mutation = useMutation({
     mutationFn: () =>
-      inviteUser({ email: email.trim(), role, name: name.trim() || undefined }),
+      inviteUser({
+        email: email.trim(),
+        role,
+        name: name.trim() || undefined,
+        residentId: role === "family" && residentId ? residentId : undefined,
+      }),
     onSuccess: onInvited,
     onError: (err: unknown) => setError(formatError(err)),
   });
@@ -338,6 +363,44 @@ function InviteUserForm({ role, onInvited, onCancel }: InviteUserFormProps) {
           />
           {emailError ? <p className="mt-1 text-sm text-destructive">{emailError}</p> : null}
         </div>
+
+        {/* Story 2.2 (AC #1): optional at invite time — an admin can still
+            invite blind and link a resident later from the Residents screen
+            (the existing "Family links" panel, AC #2). */}
+        {role === "family" ? (
+          <div>
+            <Label htmlFor="invite-resident">Link to a resident (optional)</Label>
+            <select
+              id="invite-resident"
+              className="mt-1 flex h-11 w-full rounded-sm border border-input bg-background px-3 py-2 text-[15px] text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              value={residentId}
+              onChange={(e) => setResidentId(e.target.value)}
+              disabled={
+                mutation.isPending ||
+                residentsQuery.isLoading ||
+                residentsQuery.isError
+              }
+            >
+              <option value="">
+                {residentsQuery.data && residentsQuery.data.length === 0
+                  ? "No residents yet — link later"
+                  : "No resident — link later"}
+              </option>
+              {residentsQuery.data?.map((resident) => (
+                <option key={resident.id} value={resident.id}>
+                  {resident.name}
+                </option>
+              ))}
+            </select>
+            {/* Same pattern as residents.tsx's FamilyLinksPanel: a failed
+                fetch must not look identical to "no residents available". */}
+            {residentsQuery.isError ? (
+              <p className="mt-1 text-sm text-destructive">
+                Couldn't load residents. You can still invite and link one later.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
