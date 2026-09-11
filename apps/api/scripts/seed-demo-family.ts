@@ -50,17 +50,13 @@ async function main() {
     );
     console.log(`Home ready: ${home.name} (${home.id})`);
 
-    await seedForHome(prisma, home.id, home.name);
+    await seedForHome(prisma, home.id);
   } finally {
     await prisma.$disconnect();
   }
 }
 
-async function seedForHome(
-  prisma: PrismaClient,
-  homeId: string,
-  homeName: string,
-) {
+async function seedForHome(prisma: PrismaClient, homeId: string) {
   // 2. Admin + membership.
   const admin = await upsertUser(
     prisma,
@@ -77,10 +73,13 @@ async function seedForHome(
   );
   console.log(`Admin: ${admin.email} / ${PASSWORD}`);
 
-  // 3. Residents.
+  // 3. Residents. Plain names — no home-name suffix (it used to read e.g.
+  // "Ada Lovelace (Story 2.3 Demo Home)", which is what a real resident
+  // profile would never be named, and it overflowed mobile UI elements
+  // sized for a real name).
   const residentIds: string[] = [];
   for (const r of RESIDENTS) {
-    const name = `${r.name} (${homeName})`;
+    const name = r.name;
     const resident = await inHome(prisma, homeId, async (tx) => {
       const existing = await tx.resident.findFirst({
         where: { homeId, name },
