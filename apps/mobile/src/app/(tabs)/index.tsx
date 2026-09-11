@@ -14,8 +14,9 @@ import { useAuth } from "@/lib/auth";
 import { useResidents } from "@/lib/resident-context";
 
 // Family Home tab (FR10, UX-DR13). Story 2.3 (AC #1/#2): renders the linked
-// resident(s) switcher (2-3 pills / 4+ dropdown) above a resident summary card
-// for the active resident. Story 2.4 (AC #1/#2, FR21, UX-DR8/UX-DR30):
+// resident(s) switcher (a dropdown, for any 2+ links) above a resident
+// summary card for the active resident. Story 2.4 (AC #1/#2, FR21,
+// UX-DR8/UX-DR30):
 // replaces the minimal card with the real resident-profile-card and shows its
 // skeleton while the linked-residents query loads (per UX-DR30's explicit
 // "skeleton placeholder matching the card's layout" — no spinner or blank).

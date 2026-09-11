@@ -1,22 +1,49 @@
 import type { LinkedResident } from "@evergreen/shared-types";
+import { Ionicons } from "@expo/vector-icons";
 import * as React from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Image, Pressable, View } from "react-native";
 
 import { Text } from "@/components/ui/text";
-import { cn } from "@/lib/utils";
+import { residentPhotoUrl } from "@/lib/media";
+import { cn, initials } from "@/lib/utils";
 
-// Story 2.3 (Task 4, AC #2, UX-DR9): the family resident-switcher. Thresholds:
-// 2-3 residents → a horizontal pill row; 4+ → a tap-to-open dropdown showing
-// the active resident and a chevron. Both show the active resident emphasized.
-//
-// No dropdown primitive existed in apps/mobile/src/components/ui/ (only
-// button/text/input/password-input/card/empty-state) at implementation time,
-// so the 4+ dropdown is a minimal Pressable + inline list, not a heavy new
-// dependency.
+// The family resident-switcher: a single tap-to-open dropdown whenever the
+// caller has 2+ linked residents (rendered above the active resident's
+// profile card — apps/mobile/src/app/(tabs)/index.tsx skips this entirely
+// for a single link, per AC #1). Each row shows the resident's own photo
+// (or initials, same placeholder convention as resident-profile-card) so a
+// family member recognizes who they're picking, not just a name in a list.
 interface ResidentSwitcherProps {
   residents: LinkedResident[];
   activeResidentId: string | undefined;
   onSelect: (id: string) => void;
+}
+
+function Avatar({ resident, size }: { resident: LinkedResident; size: number }) {
+  const photoUrl = residentPhotoUrl(resident.profilePhotoPublicId);
+  const style = { height: size, width: size };
+
+  if (photoUrl) {
+    return (
+      <Image
+        source={{ uri: photoUrl }}
+        style={style}
+        className="rounded-full bg-muted"
+        accessibilityRole="image"
+        accessibilityLabel={`${resident.name} photo`}
+      />
+    );
+  }
+  return (
+    <View
+      style={style}
+      className="items-center justify-center rounded-full bg-muted"
+    >
+      <Text className="font-heading text-xs text-secondary">
+        {initials(resident.name)}
+      </Text>
+    </View>
+  );
 }
 
 export function ResidentSwitcher({
@@ -27,99 +54,83 @@ export function ResidentSwitcher({
   const [open, setOpen] = React.useState(false);
 
   const activeResident = residents.find((r) => r.id === activeResidentId);
-  const showDropdown = residents.length >= 4;
 
   const handleSelect = (id: string) => {
     onSelect(id);
     setOpen(false);
   };
 
-  if (showDropdown) {
-    return (
-      <View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Switch resident"
-          className="flex-row items-center justify-between rounded-full border border-border bg-background px-4 py-2"
-          onPress={() => setOpen((v) => !v)}
-        >
-          <Text
-            numberOfLines={1}
-            className="flex-1 text-sm font-medium text-foreground"
-          >
-            {activeResident?.name ?? "Select resident"}
-          </Text>
-          <Text className="ml-2 shrink-0 text-muted-foreground">
-            {open ? "\u25B2" : "\u25BC"}
-          </Text>
-        </Pressable>
-        {open ? (
-          <View className="mt-2 overflow-hidden rounded-md border border-border bg-card p-1">
-            {residents.map((r) => {
-              const isActive = r.id === activeResidentId;
-              return (
-                <Pressable
-                  key={r.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${r.name}${isActive ? ", selected" : ""}`}
-                  className={cn(
-                    "rounded-md px-3 py-2",
-                    isActive && "bg-primary/10",
-                  )}
-                  onPress={() => handleSelect(r.id)}
-                >
-                  <Text
-                    numberOfLines={1}
-                    className={cn(
-                      "text-sm",
-                      isActive ? "font-medium text-foreground" : "text-muted-foreground",
-                    )}
-                  >
-                    {r.name}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        ) : null}
-      </View>
-    );
-  }
-
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerClassName="gap-2 pr-2"
-      className="flex-grow-0 flex-shrink-0"
-    >
-      {residents.map((r) => {
-        const isActive = r.id === activeResidentId;
-        return (
-          <Pressable
-            key={r.id}
-            accessibilityRole="button"
-            accessibilityLabel={`${r.name}${isActive ? ", selected" : ""}`}
-            className={cn(
-              "max-w-[200px] rounded-full border px-3 py-2",
-              isActive
-                ? "border-primary bg-primary"
-                : "border-border bg-background",
-            )}
-            onPress={() => handleSelect(r.id)}
-          >
-            <Text
-              numberOfLines={1}
-              className={cn(
-                "text-sm",
-                isActive ? "font-medium text-primary-foreground" : "text-muted-foreground",
-              )}
-            >
-              {r.name}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </ScrollView>
+    <View className="relative z-10">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Switch resident"
+        accessibilityState={{ expanded: open }}
+        className="flex-row items-center gap-3 rounded-md border border-border bg-card px-3 py-2.5 active:bg-muted"
+        onPress={() => setOpen((v) => !v)}
+      >
+        {activeResident ? <Avatar resident={activeResident} size={32} /> : null}
+        <Text
+          numberOfLines={1}
+          className="flex-1 font-body-emphasis text-[15px] text-foreground"
+        >
+          {activeResident?.name ?? "Select resident"}
+        </Text>
+        <Ionicons
+          name={open ? "chevron-up" : "chevron-down"}
+          size={18}
+          color="#5C5C5C"
+        />
+      </Pressable>
+
+      {open ? (
+        // Absolutely positioned so it floats OVER whatever sits below the
+        // switcher (the active resident's profile card) instead of pushing
+        // it down — the switcher's own wrapper carries `z-10` above so this
+        // overlay paints over that later sibling rather than behind it.
+        <View
+          style={{
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.15,
+            shadowRadius: 8,
+            elevation: 6,
+          }}
+          className="absolute left-0 right-0 top-full z-20 mt-1.5 gap-0.5 rounded-md border border-border bg-card p-1.5"
+        >
+          {residents.map((r) => {
+            const isActive = r.id === activeResidentId;
+            return (
+              <Pressable
+                key={r.id}
+                accessibilityRole="button"
+                accessibilityLabel={`${r.name}${isActive ? ", selected" : ""}`}
+                className={cn(
+                  "flex-row items-center gap-3 rounded-sm px-2 py-2",
+                  isActive ? "bg-primary/10" : "active:bg-muted",
+                )}
+                onPress={() => handleSelect(r.id)}
+              >
+                <Avatar resident={r} size={28} />
+                <Text
+                  numberOfLines={1}
+                  className={cn(
+                    "flex-1 text-[15px]",
+                    isActive
+                      ? "font-body-emphasis text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {r.name}
+                </Text>
+                {isActive ? (
+                  <Ionicons name="checkmark" size={18} color="#1B853F" />
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+    </View>
   );
 }

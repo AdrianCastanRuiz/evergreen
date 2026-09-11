@@ -6,6 +6,7 @@ import { Text } from "@/components/ui/text";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatResidentDob } from "@/lib/date";
 import { residentPhotoUrl } from "@/lib/media";
+import { initials } from "@/lib/utils";
 
 // Story 2.4 (Task 1, AC #1, FR21, UX-DR8): the real resident-profile-card,
 // replacing Story 2.3's minimal inline summary render in (tabs)/index.tsx.
@@ -22,16 +23,6 @@ import { residentPhotoUrl } from "@/lib/media";
 // we render initials in a placeholder avatar, never a broken image.
 interface ResidentProfileCardProps {
   resident: LinkedResident;
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
-  return (
-    parts[0].slice(0, 1).toUpperCase() +
-    parts[parts.length - 1].slice(0, 1).toUpperCase()
-  );
 }
 
 export function ResidentProfileCard({ resident }: ResidentProfileCardProps) {
