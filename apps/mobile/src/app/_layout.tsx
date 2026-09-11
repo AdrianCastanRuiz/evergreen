@@ -8,6 +8,7 @@ import {
   OpenSans_600SemiBold,
 } from "@expo-google-fonts/open-sans";
 import { Raleway_600SemiBold } from "@expo-google-fonts/raleway";
+import { Ionicons } from "@expo/vector-icons";
 import * as Sentry from "@sentry/react-native";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
@@ -31,6 +32,11 @@ if (process.env.EXPO_PUBLIC_SENTRY_DSN) {
 // variants. Each tailwind font token (hero/heading/body/...) maps to a
 // concrete weight-embedded variant, so no separate fontWeight is used with
 // custom fonts (Android renders empty otherwise).
+// ...Ionicons.font is included here too: the tab bar (and PasswordInput's
+// eye toggle) render Ionicons glyphs, and without gating on the icon font
+// the same way as the DESIGN.md fonts below, the tab bar can mount before
+// the font is ready — rendering tofu glyphs that never recover once it
+// loads, since nothing here would trigger a re-render after the fact.
 const FONTS = {
   Roboto_600SemiBold,
   Oswald_600SemiBold,
@@ -38,6 +44,7 @@ const FONTS = {
   OpenSans_500Medium,
   OpenSans_600SemiBold,
   Raleway_600SemiBold,
+  ...Ionicons.font,
 };
 
 // Auth-gated navigation (FR8). The Stack tree is STABLE — same screens in the
