@@ -105,7 +105,6 @@ function LoginScreen() {
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          onBlur={() => setEmailTouched(true)}
           autoComplete="email"
           autoFocus
           disabled={submitting}
