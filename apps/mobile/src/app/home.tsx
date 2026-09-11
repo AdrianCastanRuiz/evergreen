@@ -1,10 +1,10 @@
-import * as React from "react";
 import { router } from "expo-router";
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/auth";
+import { useLogOut } from "@/lib/use-log-out";
 
 // Staff (and non-family) single-screen landing — Story 1.10 AC #2. Staff see
 // ONLY the single-screen photo-upload flow and NO tab bar. The functional
@@ -12,18 +12,8 @@ import { useAuth } from "@/lib/auth";
 // single screen. Admin/super_admin keep this screen too on mobile (they have
 // no dedicated mobile face in this story; the portal is their home surface).
 export default function StaffScreen() {
-  const { user, signOut } = useAuth();
-  const [loggingOut, setLoggingOut] = React.useState(false);
-
-  const handleLogOut = async () => {
-    if (loggingOut) return;
-    setLoggingOut(true);
-    try {
-      await signOut();
-    } finally {
-      setLoggingOut(false);
-    }
-  };
+  const { user } = useAuth();
+  const { handleLogOut, loggingOut } = useLogOut();
 
   return (
     <EmptyState

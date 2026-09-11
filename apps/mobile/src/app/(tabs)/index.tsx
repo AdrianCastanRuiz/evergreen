@@ -10,8 +10,8 @@ import { ResidentSwitcher } from "@/components/resident-switcher";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Text } from "@/components/ui/text";
-import { useAuth } from "@/lib/auth";
 import { useResidents } from "@/lib/resident-context";
+import { useLogOut } from "@/lib/use-log-out";
 
 // Family Home tab (FR10, UX-DR13). Story 2.3 (AC #1/#2): renders the linked
 // resident(s) switcher (a dropdown, for any 2+ links) above a resident
@@ -29,20 +29,9 @@ import { useResidents } from "@/lib/resident-context";
 // Hosts the two session actions family needs (FR4/FR9): My Profile and Log
 // out.
 export default function HomeTabScreen() {
-  const { signOut } = useAuth();
   const { residents, isLoading, error, refetch, activeResidentId, setActiveResidentId } =
     useResidents();
-  const [loggingOut, setLoggingOut] = React.useState(false);
-
-  const handleLogOut = async () => {
-    if (loggingOut) return;
-    setLoggingOut(true);
-    try {
-      await signOut();
-    } finally {
-      setLoggingOut(false);
-    }
-  };
+  const { handleLogOut, loggingOut } = useLogOut();
 
   const list = residents ?? [];
 
