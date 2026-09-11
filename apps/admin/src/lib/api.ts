@@ -138,10 +138,15 @@ export async function request<T>(
     throw new ApiError(response.status, code, message, details);
   }
 
-  // 204 No Content (e.g. POST /auth/logout).
-  if (response.status === 204) return undefined as T;
-
-  return (await response.json()) as T;
+  // Empty body regardless of status code — 204 (POST /auth/logout) is the
+  // common case, but a route can also send an empty body on 201 (e.g.
+  // POST /residents/:id/family-links), which response.json() throws a
+  // SyntaxError on ("Something went wrong" surfaced to the user for what
+  // was actually a successful request). Read as text first so any empty
+  // body is handled the same way no matter the status.
+  const text = await response.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 /**
