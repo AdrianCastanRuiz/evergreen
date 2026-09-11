@@ -115,7 +115,7 @@ export default function ProfileScreen() {
 
       <Text className="mt-6 text-sm font-medium text-foreground">Name</Text>
       <Input
-        className="mt-1 px-4 py-3"
+        className="mt-1 px-4 pb-3 pt-4"
         value={name}
         onChangeText={handleNameChange}
         onBlur={() => setNameTouched(true)}
