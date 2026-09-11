@@ -62,7 +62,12 @@ async function seedForHome(
   homeName: string,
 ) {
   // 2. Admin + membership.
-  const admin = await upsertUser(prisma, 'admin', 'Story2.3 Admin');
+  const admin = await upsertUser(
+    prisma,
+    'admin',
+    'Story2.3 Admin',
+    'admin@evergreen.test',
+  );
   await inHome(prisma, homeId, (tx) =>
     tx.homeMembership.upsert({
       where: { userId_homeId: { userId: admin.id, homeId } },
@@ -98,17 +103,27 @@ async function seedForHome(
     console.log(`Resident: ${resident.name} (${resident.id})`);
   }
 
-  // 4. Family members.
-  const familyA = await upsertUser(prisma, 'family', 'Story2.3 Family A');
+  // 4. Family members. Short, fixed emails (not derived from `name`) — the
+  // descriptive names are long on purpose (they double as on-screen labels
+  // during manual testing), but a long name shouldn't also force a long
+  // login email.
+  const familyA = await upsertUser(
+    prisma,
+    'family',
+    'Story2.3 Family A',
+    'family-a@evergreen.test',
+  );
   const familyB = await upsertUser(
     prisma,
     'family',
     'Story2.3 Family B no links',
+    'family-b@evergreen.test',
   );
   const familyC = await upsertUser(
     prisma,
     'family',
     'Story2.3 Family C one link',
+    'family-c@evergreen.test',
   );
   for (const fam of [familyA, familyB, familyC]) {
     await inHome(prisma, homeId, (tx) =>
@@ -143,11 +158,8 @@ async function upsertUser(
   prisma: PrismaClient,
   role: 'admin' | 'family',
   name: string,
+  email: string,
 ) {
-  const email = `${role === 'admin' ? 'admin' : role}-${name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')}@evergreen.test`;
   const passwordHash = await bcrypt.hash(PASSWORD, SALT_ROUNDS);
   return prisma.user.upsert({
     where: { email },
