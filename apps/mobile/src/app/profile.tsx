@@ -3,12 +3,12 @@ import * as React from "react";
 import { router } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 
+import { AccountActions } from "@/components/account-actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { ApiError, authedRequest, NetworkError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { useLogOut } from "@/lib/use-log-out";
 
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
@@ -18,7 +18,6 @@ const EMAIL_RE = /^\S+@\S+\.\S+$/;
 // pattern is needed on the mobile side.
 export default function ProfileScreen() {
   const { user, updateUser } = useAuth();
-  const { handleLogOut, loggingOut } = useLogOut();
   const [name, setName] = React.useState(user?.name ?? "");
   const [email, setEmail] = React.useState(user?.email ?? "");
   const [nameTouched, setNameTouched] = React.useState(false);
@@ -93,14 +92,22 @@ export default function ProfileScreen() {
     <View className="flex-1 bg-background px-gutter pt-16">
       {/* No native header anywhere in this app (_layout.tsx sets
           headerShown: false globally) — an explicit back control is
-          required, not optional. */}
-      <Button
-        variant="outline"
-        className="self-start"
-        onPress={() => router.back()}
-      >
-        <Text>Back</Text>
-      </Button>
+          required, not optional. Log out (FR9) sits next to it as a small
+          icon — no "My Profile" link here, you're already on it.
+          Story 2.3 manual-testing fix: profile is the one screen reachable
+          by ANY authenticated user, including a zero-link family member who
+          has no (tabs) home — closing the session must always be possible,
+          so this Log out control stays even though it's now compact. */}
+      <View className="flex-row items-center justify-between">
+        <Button
+          variant="outline"
+          className="self-start"
+          onPress={() => router.back()}
+        >
+          <Text>Back</Text>
+        </Button>
+        <AccountActions showProfile={false} />
+      </View>
 
       <Text className="mt-6 font-heading text-2xl text-foreground">
         My Profile
@@ -146,20 +153,6 @@ export default function ProfileScreen() {
         ) : (
           <Text>Save</Text>
         )}
-      </Button>
-
-      {/* Story 2.3 manual-testing fix: profile is the one screen reachable by
-          ANY authenticated user, including a zero-link family member who has
-          no (tabs) home (FR9 — closing the session must always be possible).
-          Without this, a zero-link family could get stuck with no path to
-          sign out. */}
-      <Button
-        variant="outline"
-        className="mt-3"
-        disabled={loggingOut}
-        onPress={handleLogOut}
-      >
-        <Text>Log out</Text>
       </Button>
     </View>
   );
