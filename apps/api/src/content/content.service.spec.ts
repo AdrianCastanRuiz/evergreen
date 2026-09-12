@@ -22,6 +22,7 @@ describe('ContentService', () => {
 
   const homeId = 'home-1';
   const userId = 'user-1';
+  let callerRole: 'admin' | 'staff' | 'family' = 'admin';
 
   const recordNotFoundViolation = new Prisma.PrismaClientKnownRequestError(
     'not found',
@@ -42,6 +43,7 @@ describe('ContentService', () => {
   };
 
   beforeEach(async () => {
+    callerRole = 'admin';
     prisma = {
       client: {
         contentItem: {
@@ -64,6 +66,7 @@ describe('ContentService', () => {
           useValue: {
             getHomeId: jest.fn().mockReturnValue(homeId),
             getUserId: jest.fn().mockReturnValue(userId),
+            getStore: jest.fn(() => ({ role: callerRole })),
           },
         },
       ],
@@ -165,6 +168,57 @@ describe('ContentService', () => {
         meta: { page: 1, pageSize: 20, total: 0 },
       });
     });
+
+    it('forces publishedAt: { not: null } for a family caller, even with a type filter (Story 3.2 AC #8)', async () => {
+      callerRole = 'family';
+      prisma.client.contentItem.findMany.mockResolvedValue([]);
+      prisma.client.contentItem.count.mockResolvedValue(0);
+
+      await contentService.findAll({ type: 'news' });
+
+      expect(prisma.client.contentItem.findMany).toHaveBeenCalledWith({
+        where: { type: 'news', publishedAt: { not: null } },
+        orderBy: { createdAt: 'desc' },
+        skip: 0,
+        take: 20,
+      });
+      expect(prisma.client.contentItem.count).toHaveBeenCalledWith({
+        where: { type: 'news', publishedAt: { not: null } },
+      });
+    });
+
+    it('does NOT force publishedAt for a staff caller, even when a draft exists (Story 3.2 AC #8)', async () => {
+      callerRole = 'staff';
+      prisma.client.contentItem.findMany.mockResolvedValue([item]);
+      prisma.client.contentItem.count.mockResolvedValue(1);
+
+      await contentService.findAll({});
+
+      expect(prisma.client.contentItem.findMany).toHaveBeenCalledWith({
+        where: {},
+        orderBy: { createdAt: 'desc' },
+        skip: 0,
+        take: 20,
+      });
+    });
+
+    // Review finding: the test above only exercised 'staff' under an
+    // "admin/staff" title — admin's exemption was only implicitly covered
+    // via an unrelated pre-existing test defaulting to 'admin'. Explicit now.
+    it('does NOT force publishedAt for an admin caller either, even when a draft exists (Story 3.2 AC #8)', async () => {
+      callerRole = 'admin';
+      prisma.client.contentItem.findMany.mockResolvedValue([item]);
+      prisma.client.contentItem.count.mockResolvedValue(1);
+
+      await contentService.findAll({});
+
+      expect(prisma.client.contentItem.findMany).toHaveBeenCalledWith({
+        where: {},
+        orderBy: { createdAt: 'desc' },
+        skip: 0,
+        take: 20,
+      });
+    });
   });
 
   describe('findOne', () => {
@@ -180,6 +234,23 @@ describe('ContentService', () => {
       await expect(
         contentService.findOne('other-home-item'),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('404s a draft item for a family caller — never leaks that a draft exists (Story 3.2 AC #8)', async () => {
+      callerRole = 'family';
+      prisma.client.contentItem.findUnique.mockResolvedValue(item); // item.publishedAt is null
+
+      await expect(contentService.findOne(item.id)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('returns a published item to a family caller', async () => {
+      callerRole = 'family';
+      const published = { ...item, publishedAt: new Date('2026-03-05') };
+      prisma.client.contentItem.findUnique.mockResolvedValue(published);
+
+      await expect(contentService.findOne(item.id)).resolves.toEqual(published);
     });
   });
 

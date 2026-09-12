@@ -23,17 +23,24 @@ export interface LinkedFamilyMember {
 
 // Story 2.3 (AC #1, #2): a family member's own linked residents, as returned
 // by GET /residents/linked and GET /residents/:residentId for a family
-// caller. A subset of `Resident` — deliberately no homeId, which a family
-// user who belongs to several homes should never be told about (AD-18).
-// Mirrored in data shape by @evergreen/shared-types' LinkedResident for the
-// mobile client (the API stays on nodenext and defines local types here, the
-// same split as LinkedFamilyMember).
+// caller. A subset of `Resident`. Story 3.2 adds `homeId` (below) — the
+// mobile client needs it per resident to build the X-Active-Home-Id header
+// for /content, since a family JWT carries no fixed home_id of its own
+// (AD-18 still holds: the caller's *own* home_id is never in their JWT/tenant
+// context, but a resident they're already linked to freely discloses which
+// home it belongs to). Mirrored in data shape by @evergreen/shared-types'
+// LinkedResident for the mobile client (the API stays on nodenext and
+// defines local types here, the same split as LinkedFamilyMember).
 export interface LinkedResident {
   id: string;
   name: string;
   room: string | null;
   dob: string | null;
   profilePhotoPublicId: string | null;
+  // Story 3.2 (Task 2): the mobile client needs this to build the
+  // X-Active-Home-Id header for /content — the family JWT itself carries no
+  // fixed home_id (AD-18).
+  homeId: string;
 }
 
 // Story 2.1: `Resident` is already in TENANT_SCOPED_MODELS
@@ -102,6 +109,7 @@ export class ResidentsService {
               room: true,
               dob: true,
               profilePhotoPublicId: true,
+              homeId: true,
             },
           },
         },
@@ -115,6 +123,7 @@ export class ResidentsService {
       room: link.resident.room,
       dob: link.resident.dob ? link.resident.dob.toISOString() : null,
       profilePhotoPublicId: link.resident.profilePhotoPublicId,
+      homeId: link.resident.homeId,
     }));
   }
 
@@ -135,6 +144,10 @@ export class ResidentsService {
       room: resident.room,
       dob: resident.dob ? resident.dob.toISOString() : null,
       profilePhotoPublicId: resident.profilePhotoPublicId,
+      // Story 3.2: LinkedResident now carries homeId (see interface comment)
+      // — not a new disclosure here, the caller already gets this same
+      // resident's homeId via findLinkedForUser's linked-residents list.
+      homeId: resident.homeId,
     };
   }
 
