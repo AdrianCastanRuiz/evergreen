@@ -37,7 +37,7 @@ export default function HomeTabScreen() {
   const activeResident = list.find((r) => r.id === activeResidentId);
 
   return (
-    <View className="flex-1 bg-background px-gutter pt-16">
+    <View className="flex-1 bg-background px-gutter pt-4">
       <AccountActions className="flex-row justify-end gap-1" />
 
       <View className="mt-3 flex-1">

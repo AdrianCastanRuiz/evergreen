@@ -167,7 +167,7 @@ export default function NewsTabScreen() {
   // genuinely empty home ("Nothing posted yet").
   if (residentsLoading && residents === undefined) {
     return (
-      <View className="flex-1 bg-background px-gutter pt-16">
+      <View className="flex-1 bg-background px-gutter pt-4">
         <View className="gap-3">
           <NewsRowSkeleton />
           <NewsRowSkeleton />
@@ -179,7 +179,7 @@ export default function NewsTabScreen() {
 
   if (residentsError) {
     return (
-      <View className="flex-1 bg-background px-gutter pt-16">
+      <View className="flex-1 bg-background px-gutter pt-4">
         <EmptyState
           title="News"
           body="We couldn't load your residents. Check your connection and try again."
@@ -195,7 +195,7 @@ export default function NewsTabScreen() {
   // skeleton forever (activeResidentHomeId never resolves).
   if (!residents || residents.length === 0) {
     return (
-      <View className="flex-1 bg-background px-gutter pt-16">
+      <View className="flex-1 bg-background px-gutter pt-4">
         <EmptyState
           title="News"
           body="No residents are linked to your account yet."
@@ -206,7 +206,7 @@ export default function NewsTabScreen() {
 
   if (query.isLoading && !query.data) {
     return (
-      <View className="flex-1 bg-background px-gutter pt-16">
+      <View className="flex-1 bg-background px-gutter pt-4">
         <View className="gap-3">
           <NewsRowSkeleton />
           <NewsRowSkeleton />
@@ -222,7 +222,7 @@ export default function NewsTabScreen() {
         refreshing={query.isRefetching}
         onRefresh={() => void query.refetch()}
       >
-        <View className="flex-1 px-gutter pt-16">
+        <View className="flex-1 px-gutter pt-4">
           <EmptyState
             title="News"
             body="We couldn't load your home's news. Check your connection and try again."
@@ -242,7 +242,7 @@ export default function NewsTabScreen() {
         refreshing={query.isRefetching}
         onRefresh={() => void query.refetch()}
       >
-        <View className="flex-1 px-gutter pt-16">
+        <View className="flex-1 px-gutter pt-4">
           <EmptyState title="News" body="Nothing posted yet." />
         </View>
       </RefreshableState>
@@ -254,7 +254,7 @@ export default function NewsTabScreen() {
       <FlatList
         data={items}
         keyExtractor={(item) => item.id}
-        contentContainerClassName="gap-3 px-gutter pb-6 pt-16"
+        contentContainerClassName="gap-3 px-gutter pb-6 pt-4"
         // First pull-to-refresh in apps/mobile (confirmed no existing screen
         // uses RefreshControl) — standard native gesture, no custom
         // affordance needed per EXPERIENCE.md's Interaction Primitives.

@@ -56,4 +56,7 @@ export interface LinkedResident {
   dob: string | null;
   profilePhotoPublicId: string | null;
   homeId: string;
+  // The active-home header at the top of every mobile tab needs the home's
+  // display name, not just its id.
+  homeName: string;
 }

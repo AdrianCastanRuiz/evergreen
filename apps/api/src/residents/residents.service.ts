@@ -41,6 +41,9 @@ export interface LinkedResident {
   // X-Active-Home-Id header for /content — the family JWT itself carries no
   // fixed home_id (AD-18).
   homeId: string;
+  // Mobile's persistent header (active-home name at the top of every tab)
+  // needs the home's display name, not just its id.
+  homeName: string;
 }
 
 // Story 2.1: `Resident` is already in TENANT_SCOPED_MODELS
@@ -110,6 +113,7 @@ export class ResidentsService {
               dob: true,
               profilePhotoPublicId: true,
               homeId: true,
+              home: { select: { name: true } },
             },
           },
         },
@@ -124,6 +128,7 @@ export class ResidentsService {
       dob: link.resident.dob ? link.resident.dob.toISOString() : null,
       profilePhotoPublicId: link.resident.profilePhotoPublicId,
       homeId: link.resident.homeId,
+      homeName: link.resident.home.name,
     }));
   }
 
@@ -135,7 +140,10 @@ export class ResidentsService {
   // guard did not already vet.
   async findOneForFamily(id: string): Promise<LinkedResident> {
     const resident = await this.tenantContext.runBypassed(() =>
-      this.prisma.client.resident.findUnique({ where: { id } }),
+      this.prisma.client.resident.findUnique({
+        where: { id },
+        include: { home: { select: { name: true } } },
+      }),
     );
     if (!resident) throw new NotFoundException('Resident not found');
     return {
@@ -148,6 +156,7 @@ export class ResidentsService {
       // — not a new disclosure here, the caller already gets this same
       // resident's homeId via findLinkedForUser's linked-residents list.
       homeId: resident.homeId,
+      homeName: resident.home.name,
     };
   }
 
