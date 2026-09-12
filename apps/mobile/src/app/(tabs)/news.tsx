@@ -24,6 +24,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Text } from "@/components/ui/text";
 import { authedRequest } from "@/lib/api";
+import { formatDate } from "@/lib/format-date";
 import { useResidents } from "@/lib/resident-context";
 
 // Story 3.2 (Dev Notes: "Where do the other 4 content types render?"):
@@ -40,17 +41,8 @@ const TYPE_LABELS: Record<ContentType, string> = {
   announcement: "Announcement",
 };
 
-function formatPublishedDate(iso: string | null): string {
-  if (!iso) return "";
-  return new Date(iso).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
 function itemMeta(item: ContentItem): string {
-  return [formatPublishedDate(item.publishedAt), TYPE_LABELS[item.type]]
+  return [formatDate(item.publishedAt), TYPE_LABELS[item.type]]
     .filter(Boolean)
     .join(" · ");
 }
