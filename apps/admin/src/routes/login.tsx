@@ -119,7 +119,6 @@ function LoginScreen() {
           className="mt-1"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          onBlur={() => setPasswordTouched(true)}
           autoComplete="current-password"
           disabled={submitting}
         />

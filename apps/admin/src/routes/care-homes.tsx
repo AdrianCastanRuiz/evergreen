@@ -296,7 +296,6 @@ function CareHomeForm({ home, onSaved, onCancel }: CareHomeFormProps) {
               setName(e.target.value);
               setNameServerError(null);
             }}
-            onBlur={() => setNameTouched(true)}
             autoFocus
             disabled={mutation.isPending}
             maxLength={255}
@@ -327,7 +326,6 @@ function CareHomeForm({ home, onSaved, onCancel }: CareHomeFormProps) {
               setTimezone(e.target.value);
               setTimezoneServerError(null);
             }}
-            onBlur={() => setTimezoneTouched(true)}
             disabled={mutation.isPending}
             placeholder="e.g. Europe/Madrid"
           />

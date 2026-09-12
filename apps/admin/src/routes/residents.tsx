@@ -458,7 +458,6 @@ function ResidentForm({ resident, onSaved, onCancel }: ResidentFormProps) {
             className="mt-1"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onBlur={() => setNameTouched(true)}
             autoFocus
             disabled={mutation.isPending}
           />
