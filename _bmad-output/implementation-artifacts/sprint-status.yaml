@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-08-06
-last_updated: 2026-09-10 # story 3-2 created
+last_updated: 2026-09-12 # rollback helper action item resolved
 project: evergreen
 project_key: NOKEY
 tracking_system: file-system
@@ -122,7 +122,7 @@ action_items:
   - epic: 1
     action: "Extract shared rollback-on-failed-write helper for the create-pending-account pattern (duplicated across createPendingHomeAdmin/createSuperAdmin/inviteUser). Priority raised to High in the Epic 2 retro (2026-09-10) — 2 epics open, still unaddressed (Story 2.2 extended the existing pattern correctly but did not fix the duplication)."
     owner: "Amelia (Dev)"
-    status: open
+    status: done # 2026-09-12 — added UsersService.withPendingUserRollback<T>(userId, fn) in apps/api/src/users/users.service.ts; all 3 call sites now delegate to it instead of duplicating the try/catch/rollbackPendingUser/throw shape. grantExistingFamilyUserHomeAccess's rollbackHomeMembership path is a different compensating rollback, intentionally left untouched (not part of this action item's scope). Verified: tsc -b build, eslint, and jest users.service (47/47) all pass.
   - epic: 1
     action: "Add a shared trim-email validator/decorator instead of per-DTO fixes (fixed 3x separately: CreateSuperAdminDto, InviteHomeAdminDto, InviteUserDto)"
     owner: "Amelia (Dev)"

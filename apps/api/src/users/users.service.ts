@@ -93,16 +93,12 @@ export class UsersService {
     // version only guarded that one call, leaving a committed User+
     // HomeMembership with no token/email, and thus a permanently
     // unrecoverable invite, if the token write below failed instead).
-    let rawToken: string;
-    try {
+    const rawToken = await this.withPendingUserRollback(user.id, async () => {
       await this.prisma.client.homeMembership.create({
         data: { userId: user.id, homeId, role },
       });
-      rawToken = await this.passwordResetService.issueActivationToken(user.id);
-    } catch (error) {
-      await this.rollbackPendingUser(user.id, error);
-      throw error;
-    }
+      return this.passwordResetService.issueActivationToken(user.id);
+    });
 
     // Fire-and-forget, same convention as PasswordResetService.requestReset:
     // never block the HTTP response on third-party email delivery.
@@ -128,13 +124,9 @@ export class UsersService {
 
     const user = await this.createUser(normalizedEmail, role, name);
 
-    let rawToken: string;
-    try {
-      rawToken = await this.passwordResetService.issueActivationToken(user.id);
-    } catch (error) {
-      await this.rollbackPendingUser(user.id, error);
-      throw error;
-    }
+    const rawToken = await this.withPendingUserRollback(user.id, () =>
+      this.passwordResetService.issueActivationToken(user.id),
+    );
 
     this.mailService
       .sendSuperAdminInviteEmail(normalizedEmail, rawToken)
@@ -212,39 +204,38 @@ export class UsersService {
     // instead of following an emailed activation link (rawToken). Staff and
     // admin invites keep the token/link path. `.select({ id })` only trims
     // the create's return; the tenant extension still auto-injects homeId.
-    let rawInviteCode: string | undefined;
-    let rawToken: string | undefined;
-    try {
-      const membership = await this.prisma.client.homeMembership.create({
-        data: { userId: user.id, homeId: actorHomeId, role: targetRole },
-        select: { id: true },
-      });
-      if (targetRole === 'family') {
-        rawInviteCode = await this.inviteCodeService.generateForMembership(
-          membership.id,
-        );
-        // Story 2.2 (AC #1): written at invite time, alongside the
-        // HomeMembership — becomes practically usable once the account
-        // activates (Story 1.7/1.8), same as the membership itself. Rolled
-        // back by the same catch block below if this (or anything after it
-        // in this try) fails.
-        if (residentId) {
-          await this.prisma.client.familyLink.create({
-            data: { userId: user.id, residentId, homeId: actorHomeId },
-          });
+    //
+    // Covers a failure in the membership create, the code/token issuance, OR
+    // the invite-code write — any of which would otherwise leave a committed
+    // pending User with no way to ever resolve the invite.
+    const { rawInviteCode, rawToken } = await this.withPendingUserRollback(
+      user.id,
+      async () => {
+        const membership = await this.prisma.client.homeMembership.create({
+          data: { userId: user.id, homeId: actorHomeId, role: targetRole },
+          select: { id: true },
+        });
+        if (targetRole === 'family') {
+          const rawInviteCode =
+            await this.inviteCodeService.generateForMembership(membership.id);
+          // Story 2.2 (AC #1): written at invite time, alongside the
+          // HomeMembership — becomes practically usable once the account
+          // activates (Story 1.7/1.8), same as the membership itself. Rolled
+          // back by withPendingUserRollback if this (or anything above in
+          // this callback) fails.
+          if (residentId) {
+            await this.prisma.client.familyLink.create({
+              data: { userId: user.id, residentId, homeId: actorHomeId },
+            });
+          }
+          return { rawInviteCode, rawToken: undefined };
         }
-      } else {
-        rawToken = await this.passwordResetService.issueActivationToken(
+        const rawToken = await this.passwordResetService.issueActivationToken(
           user.id,
         );
-      }
-    } catch (error) {
-      // Covers a failure in the membership create, the code/token issuance,
-      // OR the invite-code write — any of which would otherwise leave a
-      // committed pending User with no way to ever resolve the invite.
-      await this.rollbackPendingUser(user.id, error);
-      throw error;
-    }
+        return { rawInviteCode: undefined, rawToken };
+      },
+    );
 
     if (rawInviteCode) {
       this.mailService
@@ -354,6 +345,23 @@ export class UsersService {
         `Failed to roll back orphaned HomeMembership for user ${userId}/home ${homeId} after: ${String(originalError)}`,
       );
       Sentry.captureException(deleteError);
+    }
+  }
+
+  // Shared by createPendingHomeAdmin/createSuperAdmin/inviteUser (Epic 2
+  // retro action item, raised to High priority: this try/catch/rollback
+  // shape was duplicated verbatim across all three). Runs `fn` and, on any
+  // failure, rolls back the already-created pending `userId` via
+  // rollbackPendingUser before rethrowing the original error untouched.
+  private async withPendingUserRollback<T>(
+    userId: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await fn();
+    } catch (error) {
+      await this.rollbackPendingUser(userId, error);
+      throw error;
     }
   }
 
