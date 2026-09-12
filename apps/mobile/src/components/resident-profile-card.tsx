@@ -4,18 +4,19 @@ import { Image, View } from "react-native";
 
 import { Text } from "@/components/ui/text";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatResidentDob } from "@/lib/date";
 import { residentPhotoUrl } from "@/lib/media";
 import { initials } from "@/lib/utils";
 
 // Story 2.4 (Task 1, AC #1, FR21, UX-DR8): the real resident-profile-card,
 // replacing Story 2.3's minimal inline summary render in (tabs)/index.tsx.
 //
-// Follows DESIGN.md's resident-profile-card spec verbatim: `card` shape
-// (`bg-card`, `border-border` hairline, `rounded-md`, `p-card-padding`), a
-// `bg-primary` accent bar along the leading edge (matching event-list-item's
-// leading-edge convention — no card in this codebase accents a different
-// edge), photo, name in the heading type style, room + DOB.
+// Follows DESIGN.md's resident-profile-card spec, with one deliberate
+// deviation: room only, no DOB (Adrian: don't show a resident's date of
+// birth in the family view). `card` shape (`bg-card`, `border-border`
+// hairline, `rounded-md`, `p-card-padding`), a `bg-primary` accent bar along
+// the leading edge (matching event-list-item's leading-edge convention — no
+// card in this codebase accents a different edge), photo, name in the
+// heading type style, room.
 //
 // profilePhotoPublicId is a Cloudinary public id, not a URL (AD-4). The
 // display URL is built at render time via residentPhotoUrl(); when it's null
@@ -27,10 +28,7 @@ interface ResidentProfileCardProps {
 
 export function ResidentProfileCard({ resident }: ResidentProfileCardProps) {
   const photoUrl = residentPhotoUrl(resident.profilePhotoPublicId);
-  const room = resident.room ? `Room ${resident.room}` : null;
-  const dob = formatResidentDob(resident.dob);
-
-  const meta = [room, dob ? `DOB ${dob}` : null].filter(Boolean).join(" · ");
+  const meta = resident.room ? `Room ${resident.room}` : null;
 
   return (
     <View className="relative flex-row items-center gap-3 overflow-hidden rounded-md border border-border bg-card pb-card-padding pt-card-padding pr-card-padding pl-[22px]">
