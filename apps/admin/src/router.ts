@@ -1,6 +1,7 @@
 import { createRouter } from "@tanstack/react-router";
 
 import { careHomesRoute } from "@/routes/care-homes";
+import { contentRoute } from "@/routes/content";
 import { familyRoute } from "@/routes/family";
 import { indexRoute } from "@/routes/index";
 import { loginRoute } from "@/routes/login";
@@ -19,6 +20,7 @@ const routeTree = rootRoute.addChildren([
     staffRoute,
     familyRoute,
     residentsRoute,
+    contentRoute,
     careHomesRoute,
     usersRoute,
     profileRoute,

@@ -50,7 +50,9 @@ const NAV_SECTIONS: NavItem[] = [
   // only; showing this to staff (Story 1.10's original list) sent them to a
   // screen that only ever 403s (Review Finding, patch).
   { label: "Residents", icon: Image, roles: ["admin"], to: "/residents" },
-  { label: "Content", icon: Newspaper, roles: ["admin", "staff"] },
+  // Story 3.1: wired to a real screen — was disabled (no `to`) until now,
+  // same transition "Residents" made in Story 2.1.
+  { label: "Content", icon: Newspaper, roles: ["admin", "staff"], to: "/content" },
   { label: "Events", icon: CalendarDays, roles: ["admin", "staff"] },
   { label: "Menu", icon: UtensilsCrossed, roles: ["admin", "staff"] },
   { label: "Metrics", icon: BarChart3, roles: ["super_admin", "admin"] },

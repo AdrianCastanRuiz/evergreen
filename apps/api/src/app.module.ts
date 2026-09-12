@@ -10,6 +10,7 @@ import { RolesGuard } from './common/auth/roles.guard';
 import { BypassTenantScopeInterceptor } from './common/tenant/bypass-tenant-scope.interceptor';
 import { TenantContextMiddleware } from './common/tenant/tenant-context.middleware';
 import { TenantModule } from './common/tenant/tenant.module';
+import { ContentModule } from './content/content.module';
 import { envValidationSchema } from './config/env.validation';
 import { HomesModule } from './homes/homes.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -27,6 +28,7 @@ import { ResidentsModule } from './residents/residents.module';
     AuthModule,
     HomesModule,
     ResidentsModule,
+    ContentModule,
     // Global default; auth endpoints override it with a tighter @Throttle()
     // (NFR10, AD-8).
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 60 }]),
