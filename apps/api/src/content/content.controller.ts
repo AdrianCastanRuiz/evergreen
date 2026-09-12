@@ -42,13 +42,25 @@ export class ContentController {
     return this.contentService.create(dto);
   }
 
+  // Story 3.2 (AC #1-#4, #7, #8): opened to `family` at the method level,
+  // overriding the class-level `@Roles('admin', 'staff')` — same
+  // method-overrides-class shape ResidentsController's own `findOne` uses to
+  // open a single route to family while the rest of the controller stays
+  // admin/staff-only. Every write route below is untouched and stays
+  // admin/staff-only via the class decorator. Publish-status filtering for a
+  // family caller happens in ContentService, not here (see its Dev Notes) —
+  // this method still needs assertHomeContext() because a family caller's
+  // homeId now comes from X-Active-Home-Id (Story 3.2 Task 4), not the JWT,
+  // and an invalid/missing header leaves homeId null.
   @Get()
+  @Roles('admin', 'staff', 'family')
   findAll(@Query() query: QueryContentDto): Promise<PaginatedContentItems> {
     this.assertHomeContext();
     return this.contentService.findAll(query);
   }
 
   @Get(':id')
+  @Roles('admin', 'staff', 'family')
   findOne(@Param('id', ParseUUIDPipe) id: string): Promise<ContentItem> {
     this.assertHomeContext();
     return this.contentService.findOne(id);

@@ -52,7 +52,14 @@ export class ContentService {
   async findAll(query: QueryContentDto): Promise<PaginatedContentItems> {
     const page = query.page ?? DEFAULT_PAGE;
     const pageSize = query.pageSize ?? DEFAULT_PAGE_SIZE;
-    const where = query.type ? { type: query.type } : {};
+    const where: Prisma.ContentItemWhereInput = {
+      ...(query.type ? { type: query.type } : {}),
+      // Story 3.2 (AC #8): never trust a query param to hide drafts from
+      // family — this is authorization-shaping business logic, not the
+      // tenant-scoping extension's job (that only handles home_id). Forced
+      // regardless of anything the caller sends; admin/staff see both.
+      ...(this.isFamilyCaller() ? { publishedAt: { not: null } } : {}),
+    };
 
     const [data, total] = await Promise.all([
       this.prisma.client.contentItem.findMany({
@@ -74,7 +81,17 @@ export class ContentService {
     // Auto-scoped by the tenant extension — a content id from another home
     // resolves to null here, never another home's row (AC #8).
     if (!item) throw new NotFoundException('Content item not found');
+    // Story 3.2 (AC #8): a family caller reading a draft by id gets the same
+    // 404 as a missing/cross-home item — never a 200 with a hidden draft,
+    // which would leak that a draft exists at all.
+    if (this.isFamilyCaller() && !item.publishedAt) {
+      throw new NotFoundException('Content item not found');
+    }
     return item;
+  }
+
+  private isFamilyCaller(): boolean {
+    return this.tenantContext.getStore()?.role === 'family';
   }
 
   async update(id: string, dto: UpdateContentItemDto): Promise<ContentItem> {

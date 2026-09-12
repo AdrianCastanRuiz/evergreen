@@ -44,13 +44,16 @@ export interface LinkFamilyMemberRequest {
 }
 
 // Story 2.3 (AC #1, #2): a family member's own linked residents as returned
-// by GET /residents/linked. Deliberately a subset of `Resident` — no homeId
-// echoed back to a caller who may belong to several homes (AD-18). What the
-// family Home screen card needs and nothing more.
+// by GET /residents/linked. A subset of `Resident`. Story 3.2 adds `homeId`
+// — the News tab needs it to build the `X-Active-Home-Id` header for
+// `/content`, since a family JWT carries no fixed home_id of its own (AD-18
+// still holds for the caller's *own* home_id; a linked resident's home is
+// not the same thing and is safe to disclose).
 export interface LinkedResident {
   id: string;
   name: string;
   room: string | null;
   dob: string | null;
   profilePhotoPublicId: string | null;
+  homeId: string;
 }
