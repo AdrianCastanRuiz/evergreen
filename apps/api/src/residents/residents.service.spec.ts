@@ -165,6 +165,7 @@ describe('ResidentsService', () => {
             room: '101',
             dob: new Date('1940-01-01'),
             profilePhotoPublicId: 'photo-1',
+            homeId: 'home-1',
           },
         },
         {
@@ -174,6 +175,7 @@ describe('ResidentsService', () => {
             room: '202',
             dob: null,
             profilePhotoPublicId: null,
+            homeId: 'home-2',
           },
         },
       ]);
@@ -187,6 +189,7 @@ describe('ResidentsService', () => {
           room: '101',
           dob: '1940-01-01T00:00:00.000Z',
           profilePhotoPublicId: 'photo-1',
+          homeId: 'home-1',
         },
         {
           id: 'resident-2',
@@ -194,6 +197,7 @@ describe('ResidentsService', () => {
           room: '202',
           dob: null,
           profilePhotoPublicId: null,
+          homeId: 'home-2',
         },
       ]);
 
@@ -210,11 +214,33 @@ describe('ResidentsService', () => {
               room: true,
               dob: true,
               profilePhotoPublicId: true,
+              homeId: true,
             },
           },
         },
         orderBy: { createdAt: 'asc' },
       });
+    });
+
+    // Story 3.2 (Task 2): homeId is now selected/returned per resident — the
+    // mobile client needs it to build the X-Active-Home-Id header for
+    // /content, since a family JWT carries no fixed home_id of its own.
+    it("includes each linked resident's homeId (Story 3.2 Task 2)", async () => {
+      prisma.client.familyLink.findMany.mockResolvedValue([
+        {
+          resident: {
+            id: 'resident-1',
+            name: 'Jane Doe',
+            room: '101',
+            dob: null,
+            profilePhotoPublicId: null,
+            homeId: 'home-1',
+          },
+        },
+      ]);
+
+      const result = await residentsService.findLinkedForUser('family-1');
+      expect(result[0]).toHaveProperty('homeId', 'home-1');
     });
 
     it('returns an empty array for a family member with no links yet (zero-links edge case)', async () => {
@@ -246,14 +272,20 @@ describe('ResidentsService', () => {
         room: resident.room,
         dob: '1940-01-01T00:00:00.000Z',
         profilePhotoPublicId: null,
+        homeId: resident.homeId,
       });
     });
 
-    it('does not echo homeId back to a family caller (AD-18)', async () => {
+    // Story 3.2: LinkedResident now carries homeId on purpose (Task 2) — this
+    // used to assert the opposite (AD-18) before this story needed the
+    // mobile client to build X-Active-Home-Id from it. Not a new disclosure:
+    // the guard already vetted this exact resident, and the caller gets the
+    // same value via findLinkedForUser's linked-residents list regardless.
+    it("includes the resident's homeId now that Story 3.2 needs it", async () => {
       prisma.client.resident.findUnique.mockResolvedValue(resident);
 
       const result = await residentsService.findOneForFamily(resident.id);
-      expect(result).not.toHaveProperty('homeId');
+      expect(result).toHaveProperty('homeId', resident.homeId);
     });
 
     it('throws NotFoundException when the resident does not exist', async () => {

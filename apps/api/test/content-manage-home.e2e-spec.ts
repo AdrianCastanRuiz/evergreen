@@ -306,15 +306,14 @@ describe('Content — manage home content (e2e)', () => {
     expect(ids).not.toContain(itemB);
   });
 
-  it('rejects a family caller — content management is admin/staff-only (AC #9)', async () => {
+  it('rejects a family caller from managing content — write routes stay admin/staff-only (AC #9)', async () => {
     const id = await seedContentItem(homeA, adminA.id, {
       title: 'Guarded item',
     });
 
-    await request(app.getHttpServer())
-      .get('/content')
-      .set('Authorization', `Bearer ${familyAToken}`)
-      .expect(403);
+    // Story 3.2 opens GET /content and GET /content/:id to family (see the
+    // dedicated family-view tests below) — every write route stays
+    // admin/staff-only via the class-level @Roles(), unchanged by that story.
     await request(app.getHttpServer())
       .post('/content')
       .set('Authorization', `Bearer ${familyAToken}`)
@@ -329,6 +328,84 @@ describe('Content — manage home content (e2e)', () => {
       .delete(`/content/${id}`)
       .set('Authorization', `Bearer ${familyAToken}`)
       .expect(403);
+    await request(app.getHttpServer())
+      .post(`/content/${id}/publish`)
+      .set('Authorization', `Bearer ${familyAToken}`)
+      .expect(403);
+  });
+
+  // Story 3.2: family reads GET /content/GET /content/:id, published-only,
+  // scoped by the X-Active-Home-Id header (a family JWT carries no fixed
+  // home_id — AD-18). Models the family-vs-admin visibility split the same
+  // way residents-family-view.e2e-spec.ts proves self-scoping, and the
+  // invalid-header handling on tenant-context.middleware's own behavior
+  // (no existing e2e spec covered this header directly before this story).
+  describe('family view (Story 3.2)', () => {
+    it('sees only published items, never a draft, from her own home (AC #1, #8)', async () => {
+      const draftId = await seedContentItem(homeA, adminA.id, {
+        title: 'Draft — not for family',
+      });
+      const publishedId = await seedContentItem(homeA, adminA.id, {
+        title: 'Published — for family',
+        publishedAt: new Date(),
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/content')
+        .set('Authorization', `Bearer ${familyAToken}`)
+        .set('X-Active-Home-Id', homeA)
+        .expect(200);
+
+      const ids = (res.body as { data: { id: string }[] }).data.map(
+        (i) => i.id,
+      );
+      expect(ids).toContain(publishedId);
+      expect(ids).not.toContain(draftId);
+    });
+
+    it('404s a draft item read by id for family — never a 200 with a hidden draft (AC #8)', async () => {
+      const draftId = await seedContentItem(homeA, adminA.id, {
+        title: 'Draft by id',
+      });
+
+      await request(app.getHttpServer())
+        .get(`/content/${draftId}`)
+        .set('Authorization', `Bearer ${familyAToken}`)
+        .set('X-Active-Home-Id', homeA)
+        .expect(404);
+    });
+
+    it('still lets admin/staff see the same draft (the family restriction is role-specific)', async () => {
+      const draftId = await seedContentItem(homeA, adminA.id, {
+        title: 'Draft visible to staff',
+      });
+
+      await request(app.getHttpServer())
+        .get(`/content/${draftId}`)
+        .set('Authorization', `Bearer ${adminAToken}`)
+        .expect(200);
+      await request(app.getHttpServer())
+        .get(`/content/${draftId}`)
+        .set('Authorization', `Bearer ${staffAToken}`)
+        .expect(200);
+    });
+
+    it('rejects a family GET with no X-Active-Home-Id header (AC #7)', async () => {
+      await request(app.getHttpServer())
+        .get('/content')
+        .set('Authorization', `Bearer ${familyAToken}`)
+        .expect(403);
+    });
+
+    it('rejects a family GET with a spoofed X-Active-Home-Id for a home she does not belong to (AC #7)', async () => {
+      const homeB = await seedHome(`E2E Content Family Home B ${Date.now()}`);
+
+      await request(app.getHttpServer())
+        .get('/content')
+        .set('Authorization', `Bearer ${familyAToken}`)
+        .set('X-Active-Home-Id', homeB)
+        .expect(403);
+    });
   });
 
   it('paginates results honoring page/pageSize (pagination envelope)', async () => {

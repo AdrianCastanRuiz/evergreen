@@ -181,12 +181,13 @@ describe('Residents — family view of linked residents (e2e)', () => {
       .set('Authorization', `Bearer ${familyAToken}`)
       .expect(200);
 
-    const list = res.body as { id: string; name: string }[];
+    const list = res.body as { id: string; name: string; homeId: string }[];
     const ids = list.map((r) => r.id).sort();
     expect(ids).toEqual([r1, r2].sort());
-    expect(
-      list.every((r) => 'name' in r && 'room' in r && !('homeId' in r)),
-    ).toBe(true);
+    // Story 3.2: homeId is now included on purpose — the mobile client needs
+    // it to build the X-Active-Home-Id header for /content.
+    expect(list.every((r) => 'name' in r && 'room' in r)).toBe(true);
+    expect(list.every((r) => r.homeId === homeA)).toBe(true);
   });
 
   it('rejects the linked-residents list for admin (home-admin-only routes unaffected)', async () => {
@@ -205,10 +206,13 @@ describe('Residents — family view of linked residents (e2e)', () => {
       .set('Authorization', `Bearer ${familyAToken}`)
       .expect(200);
 
-    const body = res.body as { id: string; name: string };
+    const body = res.body as { id: string; name: string; homeId: string };
     expect(body.id).toBe(r1);
     expect(body.name).toBe('Linked Read Target');
-    expect(body).not.toHaveProperty('homeId');
+    // Story 3.2: homeId is now included on purpose (see the linked-list test
+    // above) — not a new disclosure, the guard already vetted this exact
+    // resident for this caller.
+    expect(body.homeId).toBe(homeA);
   });
 
   it('rejects a family member reading a resident they are NOT linked to — 403, never 200 (AC #4)', async () => {
