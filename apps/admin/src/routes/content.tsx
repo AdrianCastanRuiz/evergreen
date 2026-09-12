@@ -464,7 +464,6 @@ function ContentForm({ item, type, onSaved, onCancel }: ContentFormProps) {
             className="mt-1"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            onBlur={() => setTitleTouched(true)}
             autoFocus
             disabled={mutation.isPending}
           />
@@ -480,7 +479,6 @@ function ContentForm({ item, type, onSaved, onCancel }: ContentFormProps) {
             className="mt-1 flex min-h-32 w-full rounded-sm border border-input bg-background px-3 py-2 text-[15px] text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            onBlur={() => setBodyTouched(true)}
             disabled={mutation.isPending}
           />
           {bodyError ? (
