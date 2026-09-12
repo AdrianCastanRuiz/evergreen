@@ -43,6 +43,7 @@ describe('ResidentsService', () => {
     room: '101',
     dob: new Date('1940-01-01'),
     profilePhotoPublicId: null,
+    home: { name: 'Oakwood House' },
   };
 
   beforeEach(async () => {
@@ -166,6 +167,7 @@ describe('ResidentsService', () => {
             dob: new Date('1940-01-01'),
             profilePhotoPublicId: 'photo-1',
             homeId: 'home-1',
+            home: { name: 'Oakwood House' },
           },
         },
         {
@@ -176,6 +178,7 @@ describe('ResidentsService', () => {
             dob: null,
             profilePhotoPublicId: null,
             homeId: 'home-2',
+            home: { name: 'Riverside Lodge' },
           },
         },
       ]);
@@ -190,6 +193,7 @@ describe('ResidentsService', () => {
           dob: '1940-01-01T00:00:00.000Z',
           profilePhotoPublicId: 'photo-1',
           homeId: 'home-1',
+          homeName: 'Oakwood House',
         },
         {
           id: 'resident-2',
@@ -198,6 +202,7 @@ describe('ResidentsService', () => {
           dob: null,
           profilePhotoPublicId: null,
           homeId: 'home-2',
+          homeName: 'Riverside Lodge',
         },
       ]);
 
@@ -215,6 +220,7 @@ describe('ResidentsService', () => {
               dob: true,
               profilePhotoPublicId: true,
               homeId: true,
+              home: { select: { name: true } },
             },
           },
         },
@@ -235,12 +241,33 @@ describe('ResidentsService', () => {
             dob: null,
             profilePhotoPublicId: null,
             homeId: 'home-1',
+            home: { name: 'Oakwood House' },
           },
         },
       ]);
 
       const result = await residentsService.findLinkedForUser('family-1');
       expect(result[0]).toHaveProperty('homeId', 'home-1');
+    });
+
+    // The active-home header at the top of every mobile tab needs this.
+    it("includes each linked resident's homeName", async () => {
+      prisma.client.familyLink.findMany.mockResolvedValue([
+        {
+          resident: {
+            id: 'resident-1',
+            name: 'Jane Doe',
+            room: '101',
+            dob: null,
+            profilePhotoPublicId: null,
+            homeId: 'home-1',
+            home: { name: 'Oakwood House' },
+          },
+        },
+      ]);
+
+      const result = await residentsService.findLinkedForUser('family-1');
+      expect(result[0]).toHaveProperty('homeName', 'Oakwood House');
     });
 
     it('returns an empty array for a family member with no links yet (zero-links edge case)', async () => {
@@ -273,7 +300,15 @@ describe('ResidentsService', () => {
         dob: '1940-01-01T00:00:00.000Z',
         profilePhotoPublicId: null,
         homeId: resident.homeId,
+        homeName: resident.home.name,
       });
+    });
+
+    it("includes the resident's homeName", async () => {
+      prisma.client.resident.findUnique.mockResolvedValue(resident);
+
+      const result = await residentsService.findOneForFamily(resident.id);
+      expect(result).toHaveProperty('homeName', resident.home.name);
     });
 
     // Story 3.2: LinkedResident now carries homeId on purpose (Task 2) — this
